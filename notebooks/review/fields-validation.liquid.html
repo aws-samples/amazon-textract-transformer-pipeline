@@ -1,0 +1,441 @@
+<!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: MIT-0 -->
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+  integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+  crossorigin="anonymous">
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.3.0/font/bootstrap-icons.css"
+  integrity="sha384-YdM/o2MTG+kIKs1sV/gSEWXZo5d1DdBeuo/6s8qMJd5I5FKkStdHSXeNukljrWUZ"
+  crossorigin="anonymous">
+
+<script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js"
+  integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW"
+  crossorigin="anonymous"
+></script>
+
+<!--
+  While many modern browsers support native PDF rendering (see https://pdfobject.com/static/), the iframe within which
+  SMGT/A2I task UIs run is sandboxed; and different browsers take different decisions on whether their built-in PDF
+  rendering plugins should be allowed in these contexts.
+
+  So for broader browser support, we'll use directly use the Mozilla PDF.js libraries which many of these browser
+  implementations are built on anyway:
+-->
+<script
+  src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.9.359/legacy/build/pdf.js"
+  integrity="sha384-babPVq8wdMqz15eJWx0SdLYNQULhZRUwMuwJTDT3QxPYRRNYKCHdNwFtN/g6lPmT"
+  crossorigin="anonymous"
+></script>
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.9.359/legacy/web/pdf_viewer.css"
+  integrity="sha384-R3jyFcufUMnWbY95W/UYeS05QW9YBGL9rrkmu7gCilPJ28SRdZlHf43CUgNwIE8e"
+  crossorigin="anonymous">
+<script
+  src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.9.359/legacy/web/pdf_viewer.js"
+  integrity="sha384-jUMffufVvJRxRD31LIPe2aKzeoPEWxs0CGd3HL7WvoxMiiFulEziq+33ua7bwlza"
+  crossorigin="anonymous"
+></script>
+
+
+<crowd-form>
+  <div class="container-fluid" style="height: 100%; overflow: hidden;">
+    <div class="row" style="height: 100%; overflow: auto;">
+      <div class="col-xs-8 col-lg-8 col-xl-6 col-taskobject">
+        <div style="position: relative; overflow: hidden; height: 100%; width: 100%;">
+          <div
+            id="pdf-container"
+            class="pdfContainer"
+            style="height: 100%; width: 100%; position: absolute; overflow: auto;"
+          >
+            <div
+              class="pdf-floating-toolbar"
+              style="position: sticky; left: 0px; top: 0px; width: 100%; z-index: 10;"
+            >
+              <crowd-button
+                class="pdf-zoom-button"
+                onclick="viewerZoomOut();"
+              ><iron-icon icon="zoom-out" alt="Zoom Out"/></crowd-button>
+              <crowd-button
+                class="pdf-zoom-button"
+                onclick="viewerZoomIn();"
+              ><iron-icon icon="zoom-in" alt="Zoom In"/></crowd-button>
+            </div>
+            <div id="pdf-viewer" class="pdfViewer"></div>
+            <div id="pdf-load-error" hidden="true">
+              <iron-icon icon="error-outline" style="height: 40px; width: 40px;"></iron-icon>
+              <p style="margin-top: 5px;">
+                Sorry, failed to load the PDF document for this task! Please try refreshing the page and contact the
+                task administrator if the error persists.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xs-4 col-lg-4 col-xl-6 col-fields">
+        <h4>Extracted Fields</h4>
+        {% for fieldkv in task.input.ModelResult.Fields %}
+          {% if fieldkv[1].Value %}
+            <!-- Single-Valued Field (all values in Liquid are truthy except nil & false) -->
+            {% assign field_value_len = fieldkv[1].Value | size %}
+            <div class="field-container">
+              <div style="display: flex; align-items: center;">
+                <crowd-checkbox
+                  name="field-present-{{ fieldkv[0] }}"
+                  onclick="handleCheckBoxClick(this);"
+                  style="flex: 0 0 auto; padding-top: 16px;"
+                  value="checked"
+                  {% if field_value_len > 0 or fieldkv[1].Optional != true %}
+                    checked
+                  {% endif %}
+                ></crowd-checkbox>
+                <crowd-input
+                  name="field-value-{{ fieldkv[0] }}"
+                  label="{{fieldkv[0]}}"
+                  style="flex: 1 0 auto;"
+                  value="{{ fieldkv[1].Value }}"
+                  {% if field_value_len > 0 or fieldkv[1].Optional != true %}
+                    required
+                  {% else %}
+                    disabled
+                  {% endif %}
+                ></crowd-input>
+              </div>
+              <div
+                class="confidence-bar"
+                style="background: linear-gradient(90deg, rgba(63,81,181,1.0) 0%, rgba(63,81,181,1.0) {{ fieldkv[1].Confidence | times: 100 }}%, rgba(92,92,92,0.5) {{ fieldkv[1].Confidence | times: 100 }}%, rgba(92,92,92,0.5) 100%);"
+              >{{fieldkv[1].Confidence | times: 100 | round: 1}}%</div>
+              {% if fieldkv[1].Detections and fieldkv[1].Detections[0] %}
+                <div class="field-detections">
+                  <p>Detected at:</p>
+                  <ul>
+                    {% for det in fieldkv[1].Detections %}
+                      <li>
+                        ({{det.Confidence | times: 100 | round: 1 }}% Confidence): Page {{det.PageNum}},
+                        X={{det.BoundingBox.Width | divided_by: 2 | plus: det.BoundingBox.Left | round: 4}},
+                        Y={{det.BoundingBox.Height | divided_by: 2 | plus: det.BoundingBox.Top | round: 4}}
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+            </div>
+          {% else %}
+            <!-- Multi-Value Field -->
+            {% assign field_value_len = fieldkv[1].Values | size %}
+            <div class="field-container">
+              <div style="display: flex; align-items: center; padding-bottom: 8px;">
+                <crowd-checkbox
+                  name="field-present-{{ fieldkv[0] }}"
+                  onclick="handleCheckBoxClick(this);"
+                  style="flex: 0 0 auto; padding-top: 16px;"
+                  value="checked"
+                  {% if field_value_len > 0 or fieldkv[1].Optional != true %}
+                    checked
+                  {% endif %}
+                ></crowd-checkbox>
+                <label class="multivalue-field-label" style="flex: 1 0 auto;">{{fieldkv[0]}}</label>
+              </div>
+              <div
+                class="confidence-bar"
+                style="background: linear-gradient(90deg, rgba(63,81,181,1.0) 0%, rgba(63,81,181,1.0) {{ fieldkv[1].Confidence | times: 100 }}%, rgba(92,92,92,0.5) {{ fieldkv[1].Confidence | times: 100 }}%, rgba(92,92,92,0.5) 100%);"
+              >{{fieldkv[1].Confidence | times: 100 | round: 1}}%</div>
+              <div class="multivalue-field-values">
+                {% assign ix_value = -1 %}
+                {% for fieldvalue in fieldkv[1].Values %}
+                  <div class="multivalue-field-value">
+                    <crowd-input
+                      name="field-multival-{% increment ix_value %}-{{ fieldkv[0] }}"
+                      value="{{ fieldvalue.Value }}"
+                      required
+                    ></crowd-input>
+                    <crowd-button
+                      class="field-multival-rm"
+                      onclick="handleMultiValueRemoveClick(this);"
+                    ><iron-icon icon="remove-circle"/></crowd-button>
+                  </div>
+                {% else %}
+                {% comment %} Must have at least one slot present for the add/remove logics to work {% endcomment %}
+                  <div class="multivalue-field-value">
+                    <crowd-input
+                      name="field-multival-0-{{ fieldkv[0] }}"
+                      value=""
+                      {% if fieldkv[1].Optional != true %}
+                        required
+                      {% endif %}
+                    ></crowd-input>
+                    <crowd-button
+                      class="field-multival-rm"
+                      onclick="handleMultiValueRemoveClick(this);"
+                    ><iron-icon icon="remove-circle"/></crowd-button>
+                  </div>
+                {% endfor %}
+                <div class="multivalue-field-adder">
+                  <div class="spacer"></div>
+                  <crowd-button
+                    class="field-multival-add"
+                    onclick="handleMultiValueAddClick(this);"
+                  ><iron-icon icon="add-box"/></crowd-button>
+                </div>
+              </div>
+            </div>
+          {% endif %}
+        {% else %}
+          <div>No fields available!</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <short-instructions>
+    <p>Review the input document and amend the auto-extracted values for each field, then click Submit.</p>
+    <p>For more guidance view the full instructions.</p>
+  </short-instructions>
+
+  <full-instructions header="SmartOCR Review">
+    <p>
+      All fields are required unless you explicitly un-tick the checkbox to indicate that field isn't in the document.
+    </p>
+    <p>
+      <em>Note:</em> We could programmatically pull through per-field guidance to here as we did in the custom SMGT
+      template. However, in practice the guidance would probably be a little different for online review... So we
+      haven't in this example.
+    </p>
+  </full-instructions>
+</crowd-form>
+
+<style>
+  .col-taskobject {
+    max-height: 100%;
+    min-height: 25%;
+    text-align: center;
+  }
+
+  .col-fields {
+    max-height: 100%;
+    overflow: auto;
+  }
+
+  .field-container {
+    margin: 8px 0px;
+  }
+
+  .confidence-bar {
+    color: white;
+    padding-left: 5px;
+    font-size: 7px;
+    line-height: 9px;
+    width: 100%;
+  }
+
+  .field-detections {
+    color: rgb(63,81,181);
+    background-color: #ddd;
+    font-size: 0.8rem;
+    overflow: hidden; /* Force child margins inside container */
+    padding-left: 26px;
+    padding-top: 4px;
+  }
+  .field-detections p,.field-detections ul, .field-detections ol {
+    margin-bottom: 0.2rem;
+  }
+
+  .multivalue-field-label {
+    border-bottom: 1px solid transparent;
+    padding-bottom: 2px;
+    padding-top: 16px;
+  }
+
+  .multivalue-field-value,.multivalue-field-adder {
+    align-items: center;
+    display: flex;
+    padding-left: 26px;
+    width: 100%;
+  }
+  .multivalue-field-value>crowd-input,.multivalue-field-value>.spacer,.multivalue-field-adder>crowd-input,.multivalue-field-adder>.spacer {
+    flex: 1 0 auto;
+  }
+  .multivalue-field-value>crowd-button,.multivalue-field-adder>crowd-button {
+    flex: 0 0 auto;
+  }
+
+  .pdf-zoom-button {
+    opacity: 0.6;
+  }
+  .pdf-zoom-button:hover {
+    opacity: 0.9;
+  }
+  .pdfViewer .page {
+    margin-bottom: 10px;
+  }
+
+  #pdf-load-error {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+  }
+</style>
+
+<script>
+  // PDF viewer setup script
+
+  // legacy/build/pdf.js exports the core `pdfjsLib`, and legacy/web/pdf_viewer.js exports the
+  // `pdfjsViewer` namespace.
+  try {
+    var pdfEventBus = new pdfjsViewer.EventBus();
+    var viewer = new pdfjsViewer.PDFViewer({
+      container: document.getElementById("pdf-container"),
+      viewer: document.getElementById("pdf-viewer"),
+      eventBus: pdfEventBus,
+    });
+
+    var loadingTask = pdfjsLib.getDocument(
+      // For some reason the URL from Liquid template gets params escaped from '&' to '&amp;':
+      "{{ task.input.TaskObject | grant_read_access }}".replaceAll("&amp;", "&")
+    );
+    loadingTask.promise.then((doc) => {
+      console.log("Loaded document with " + doc.numPages + " page(s)");
+      viewer.setDocument(doc);
+      document.getElementById("pdf-load-error").hidden = true;
+    }, (reason) => {
+      console.error("Document load failed", reason);
+      document.getElementById("pdf-load-error").hidden = false;
+    });
+  } catch (err) {
+    console.error("Failed to initialize PDF viewer", err);
+    document.getElementById("pdf-load-error").hidden = false;
+  }
+
+  function viewerZoomIn() {
+      viewer.currentScale *= 1.1;
+  }
+
+  function viewerZoomOut() {
+      viewer.currentScale /= 1.1;
+  }
+</script>
+
+<script>
+  // Field control/interactivity functions
+
+  var cachedInputValues = {};
+
+  /**
+   * Reversibly clear, disable, optionalify a crowd-input when acrowd-checkbox of corresponding name=*-present clicked
+   */
+  function handleCheckBoxClick(checkbox) {
+    // Look up the linked crowd-input by the name of this crowd-checkbox:
+    if (!checkbox.name.startsWith("field-present-")) {
+      console.warn("Checkbox name '" + checkbox.name + "' doesn't start with field-present-: Ignoring click event");
+      return;
+    }
+    var inputName = "field-value-" + checkbox.name.substring("field-present-".length);
+    var input = document.querySelector("crowd-input[name='" + inputName + "']");
+    if (input) {
+      // This function gets called against the crowd-checkbox element *before* it updates
+      if (checkbox.checked) {
+        // Checkbox being unchecked -> clear, disable, and un-require field
+        cachedInputValues[inputName] = input.value;
+        input.value = "";
+        input.disabled = true;
+        input.removeAttribute("required");
+      } else {
+        // Checkbox being checked -> restore, enable, and require field
+        if (cachedInputValues[inputName]) input.value = cachedInputValues[inputName] || "";
+        input.disabled = false;
+        input.setAttribute("required", "");
+      }
+    } else {
+      // Can't find value field implies this is a multi-value field
+      var fieldContainer = checkbox.closest(".field-container");
+      var fieldLabel = fieldContainer.querySelector("label.multivalue-field-label");
+      var multiInput = fieldContainer.querySelector(".multivalue-field-values");
+      var valueInputs = multiInput.querySelectorAll("crowd-input");
+      // This function gets called against the crowd-checkbox element *before* it updates
+      if (checkbox.checked) {
+        // Checkbox being unchecked -> clear, disable, and un-require field
+        multiInput.hidden = true;
+        fieldLabel.style.opacity = 0.33;  // Consistent with Crowd HTML behavior
+        for (var inp of valueInputs) {
+          inp.removeAttribute("required");
+        }
+      } else {
+        // Checkbox being checked -> restore, enable, and require field
+        multiInput.hidden = false;
+        fieldLabel.style.removeProperty("opacity");
+        for (var inp of valueInputs) {
+          inp.setAttribute("required", "");
+        }
+      }
+    }
+  }
+
+  /**
+   * Add a new value slot to a multi-value field
+   */
+  function handleMultiValueAddClick(button) {
+    var valuesContainer = button.closest(".multivalue-field-values");
+    var existingValues = valuesContainer.querySelectorAll(".multivalue-field-value");
+    // TODO: Prevent ever being zero and ensure always ordinal.
+    var lastValue = existingValues[existingValues.length - 1];
+    var newValue = lastValue.cloneNode(deep=true);
+    updateMVValue(newValue, ix=existingValues.length, clear=true);
+    lastValue.parentNode.insertBefore(newValue, lastValue.nextSibling);
+    for (var rmbtn of valuesContainer.querySelectorAll("crowd-button.field-multival-rm")) {
+      rmbtn.removeAttribute("disabled");
+    }
+  }
+
+  /**
+   * Remove an existing value slot to a multi-value field
+   */
+  function handleMultiValueRemoveClick(button) {
+    console.warn("TODO: Implement multi-value remove");
+    var thisValue = button.closest(".multivalue-field-value");
+    var valuesContainer = button.closest(".multivalue-field-values");
+    var existingValues = valuesContainer.querySelectorAll(".multivalue-field-value");
+    if (existingValues.length == 1) {
+      console.warn("Refusing to delete final value");
+      updateMVValue(existingValues[0], ix=null, clear=false, disableDelete=true);
+      return
+    }
+    
+    thisValue.remove();
+    var remainingValues = valuesContainer.querySelectorAll(".multivalue-field-value");
+    var multipleValuesRemaining = remainingValues.length > 1;
+    for (var i = 0; i < remainingValues.length; ++i) {
+      updateMVValue(remainingValues[i], ix=i, clear=false, disableDelete=!multipleValuesRemaining);
+    }
+  }
+  
+  function updateMVValue(multiValueFieldValueEl, ix=null, clear=false, disableDelete=null) {
+    var inputEl = multiValueFieldValueEl.querySelector("crowd-input");
+    if (ix !== null) {
+      inputEl.name = [
+        "field-multival",
+        ix,
+        inputEl.name.substring("field-multival-".length).split("-", 2)[1],
+      ].join("-");
+    }
+    if (clear) {
+      inputEl.value = "";
+    }
+    if (disableDelete !== null) {
+      var rmbtn = multiValueFieldValueEl.querySelector("crowd-button.field-multival-rm");
+      if (disableDelete) {
+        rmbtn.setAttribute("disabled", "");
+      } else {
+        rmbtn.removeAttribute("disabled");
+      }
+    }
+    return multiValueFieldValueEl;
+  }
+
+</script>

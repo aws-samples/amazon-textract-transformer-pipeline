@@ -1,0 +1,302 @@
+{
+  "TaskObject": "s3://pipelinestack-pipelineinputbucket12345678-123456789abc/Visa Credit Card Agreement and Disclosure.pdf",
+  "ModelResult": {
+    "Confidence": 0.9,
+    "Fields": {
+      "Agreement Effective Date": {
+        "ClassId": 0,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "Optional": true,
+        "SortOrder": 0,
+        "Value": "",
+        "Detections": []
+      },
+      "APR - Introductory": {
+        "ClassId": 1,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "Optional": true,
+        "SortOrder": 1,
+        "Value": "",
+        "Detections": []
+      },
+      "APR - Balance Transfers": {
+        "ClassId": 2,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "Optional": true,
+        "SortOrder": 2,
+        "Value": "",
+        "Detections": []
+      },
+      "APR - Cash Advances": {
+        "ClassId": 3,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "Optional": true,
+        "SortOrder": 3,
+        "Value": "",
+        "Detections": []
+      },
+      "APR - Purchases": {
+        "ClassId": 4,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "Optional": true,
+        "SortOrder": 4,
+        "Value": "",
+        "Detections": []
+      },
+      "APR - Penalty": {
+        "ClassId": 5,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "Optional": true,
+        "SortOrder": 5,
+        "Value": "",
+        "Detections": []
+      },
+      "APR - General": {
+        "ClassId": 6,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "Optional": true,
+        "SortOrder": 6,
+        "Value": "",
+        "Detections": []
+      },
+      "APR - Other": {
+        "ClassId": 7,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "Optional": true,
+        "SortOrder": 7,
+        "Value": "",
+        "Detections": []
+      },
+      "Fee - Annual": {
+        "ClassId": 8,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "SortOrder": 8,
+        "Value": "",
+        "Detections": []
+      },
+      "Fee - Balance Transfer": {
+        "ClassId": 9,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "SortOrder": 9,
+        "Value": "",
+        "Detections": []
+      },
+      "Fee - Late Payment": {
+        "ClassId": 10,
+        "Confidence": 0.6034019589424133,
+        "NumDetections": 1,
+        "SortOrder": 10,
+        "Value": "any reasonable attorney's fees We incur, plus the costs and expenses of any legal action,",
+        "Detections": [
+          {
+            "ClassId": 10,
+            "ClassName": "Fee - Late Payment",
+            "Confidence": 0.6034019589424133,
+            "Blocks": [
+              "ae67c294-57b4-41d6-b2bf-17f4d7dc73d8",
+              "15b5cb58-93c0-427f-bafa-a69073631701",
+              "76460133-8ac8-406f-b441-29406043be0a",
+              "06703d3e-c38d-40c7-ae2d-e2e0ca088a7d",
+              "ba37843c-b8a3-4b6b-83e2-28dc8403e842",
+              "fd86e26a-25ab-4981-8ddb-2ae917ea62b0",
+              "71a4cea6-4fbc-4c27-a393-10f37aaac394",
+              "3d8f6abb-e6b6-48c2-be82-0a2895f9d18b",
+              "7aa67712-1f54-4f24-be05-1f2ef9bd14fc",
+              "c1bc2146-7c75-473a-b8db-6d3e49015423",
+              "27418c93-c227-4230-bd75-ccba456e236d",
+              "8a9100c9-b1d9-4896-9bd0-1a8afb15685b",
+              "895191fc-1821-4e0c-8ccb-3c41ca6e7d9d",
+              "b4a9eab2-a4c0-4580-b71d-40ac9b13bc95",
+              "b176c1e9-e374-48b6-8e4a-ed16797a49d0"
+            ],
+            "BoundingBox": {
+              "Top": 0.5310397148132324,
+              "Left": 0.16350233554840088,
+              "Height": 0.013055950403213501,
+              "Width": 0.6957982555031776
+            },
+            "PageNum": 4,
+            "Text": "any reasonable attorney's fees We incur, plus the costs and expenses of any legal action,"
+          }
+        ]
+      },
+      "Fee - Returned Payment": {
+        "ClassId": 11,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "SortOrder": 11,
+        "Value": "",
+        "Detections": []
+      },
+      "Fee - Foreign Transaction": {
+        "ClassId": 12,
+        "Confidence": 0,
+        "NumDetections": 0,
+        "SortOrder": 12,
+        "Value": "",
+        "Detections": []
+      },
+      "Card Name": {
+        "ClassId": 14,
+        "Confidence": 0.5,
+        "NumDetections": 4,
+        "SortOrder": 13,
+        "Values": [
+          {
+            "Confidence": 0.5000929110615387,
+            "Value": "Visa Credit Card",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.999125063419342,
+                "Blocks": [
+                  "00f82f8b-0b9e-4b22-a06a-aa729dcb205c",
+                  "acc76457-29e6-4783-9878-0dbee5cede77",
+                  "9b1d0448-3ad3-4c0a-8bbe-ce396bf482e1"
+                ],
+                "BoundingBox": {
+                  "Top": 0.6116645932197571,
+                  "Left": 0.19350315630435944,
+                  "Height": 0.010187864303588867,
+                  "Width": 0.12847916781902313
+                },
+                "PageNum": 4,
+                "Text": "Visa Credit Card"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.999560534954071,
+                "Blocks": [
+                  "19ce7147-d101-4f80-a4eb-90df67cacfc8",
+                  "dad3b352-bb4f-41d2-b47f-d38357786723",
+                  "ed768a7c-979f-46ca-932d-1174684aa26b"
+                ],
+                "BoundingBox": {
+                  "Top": 0.6405829787254333,
+                  "Left": 0.09386038780212402,
+                  "Height": 0.010319800116121769,
+                  "Width": 0.12679750844836235
+                },
+                "PageNum": 4,
+                "Text": "Visa Credit Card"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9995934367179871,
+                "Blocks": [
+                  "0bde494c-8395-43bf-94c0-48b8b7f3e022",
+                  "f9a41bf1-2f82-4545-9552-73eb9244a3e8",
+                  "83a0ea9c-b03a-44d6-9003-a7c19b399626"
+                ],
+                "BoundingBox": {
+                  "Top": 0.6550257205963135,
+                  "Left": 0.7158324122428894,
+                  "Height": 0.01029503159224987,
+                  "Width": 0.12333172932267189
+                },
+                "PageNum": 4,
+                "Text": "Visa Credit Card"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.4999070889384612,
+            "Value": "VISA PLATINUMIVISA REWARDS",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9996284246444702,
+                "Blocks": [
+                  "359f8810-2d6a-43bb-8d99-0f6ee9032728",
+                  "f48986ce-983a-4821-b4f9-b7d03bcc3e27",
+                  "6840d615-ac55-4959-8d33-11dc2833842c"
+                ],
+                "BoundingBox": {
+                  "Top": 0.16754531860351562,
+                  "Left": 0.6558783054351807,
+                  "Height": 0.01093764416873455,
+                  "Width": 0.2847636640071869
+                },
+                "PageNum": 1,
+                "Text": "VISA PLATINUMIVISA REWARDS"
+              }
+            ]
+          }
+        ]
+      },
+      "Provider Address": {
+        "ClassId": 15,
+        "Confidence": 0.5009801338701653,
+        "NumDetections": 2,
+        "SortOrder": 14,
+        "Value": "5901 Gibraltar Drive, Pleasanton, CA 94588",
+        "Detections": [
+          {
+            "ClassId": 15,
+            "ClassName": "Provider Address",
+            "Confidence": 0.9994670748710632,
+            "Blocks": [
+              "7d99c8cd-bddb-49cd-a828-954a13e21629",
+              "84519bab-a04d-4f3c-9ab3-c9855cc792d7",
+              "3a9e4e89-aef8-4ad8-8ee3-fccd882ae8a2",
+              "1e55ecad-d842-4a90-b9c3-5e2e698da21d",
+              "de53ea1b-315f-4758-be32-83fe7124a770",
+              "c7aabf5e-5e26-4a3d-9ca6-8d3287b84028"
+            ],
+            "BoundingBox": {
+              "Top": 0.11821919679641724,
+              "Left": 0.06788285821676254,
+              "Height": 0.009210583753883839,
+              "Width": 0.2839433513581753
+            },
+            "PageNum": 1,
+            "Text": "5901 Gibraltar Drive, Pleasanton, CA 94588"
+          }
+        ]
+      },
+      "Provider Name": {
+        "ClassId": 16,
+        "Confidence": 0.3220982724304482,
+        "NumDetections": 3,
+        "SortOrder": 15,
+        "Value": "1st United Services Credit Union",
+        "Detections": [
+          {
+            "ClassId": 16,
+            "ClassName": "Provider Name",
+            "Confidence": 0.9497994780540466,
+            "Blocks": [
+              "3a23a9fb-2ef6-4ec8-9c2e-1cc564d9ab7b",
+              "fe9742f1-f5a8-4a22-bd23-06d2e3e678e3",
+              "05295316-89fa-4392-aad7-03abe8c59ee9",
+              "014716bd-8df5-4b88-ac81-86aa2b888eba",
+              "042d5300-822d-42f4-b560-ecd882590224"
+            ],
+            "BoundingBox": {
+              "Top": 0.24288952350616455,
+              "Left": 0.23464378714561462,
+              "Height": 0.010333182290196419,
+              "Width": 0.24001730605959892
+            },
+            "PageNum": 1,
+            "Text": "1st United Services Credit Union"
+          }
+        ]
+      }
+    }
+  }
+}

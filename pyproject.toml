@@ -1,0 +1,31 @@
+[tool.black]
+extend-exclude = "^/(cdk\\.out|setup\\.py)"
+line-length = 100
+
+[tool.poetry]
+name = "amazon-textract-transformer-pipeline"
+version = "0.1.0"
+description = "Post-processing Amazon Textract with Transformer-Based Models on Amazon SageMaker"
+authors = ["Amazon Web Services"]
+license = "MIT-0"
+
+[tool.poetry.dependencies]
+python = "^3.6.2"
+"aws-cdk.aws-codepipeline" = "^1.119"
+"aws-cdk.aws-dynamodb" = "^1.119"
+"aws-cdk.aws-events-targets" = "^1.119"
+"aws-cdk.aws-lambda-python" = "^1.119"
+"aws-cdk.aws-s3-notifications" = "^1.119"
+"aws-cdk.aws-ssm" = "^1.119"
+"aws-cdk.aws-stepfunctions" = "^1.119"
+"aws-cdk.aws-stepfunctions-tasks" = "^1.119"
+"aws-cdk.core" = "^1.119"
+boto3 = "^1.17.92"
+
+[tool.poetry.dev-dependencies]
+black = "^21.6b0"
+black-nb = "^0.5.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
