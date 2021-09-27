@@ -27,6 +27,7 @@ class SageMakerEnrichmentStep(cdk.Construct):
     properties, and will override that $.Textract field on the output with the bucket and key for
     the enriched output JSON file.
     """
+
     def __init__(
         self,
         scope: cdk.Construct,

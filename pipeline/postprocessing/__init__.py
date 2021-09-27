@@ -141,6 +141,7 @@ class LambdaPostprocStep(cdk.Construct):
     to the output state: Consolidating detections of the different fields as defined by the
     field/entity configuration JSON in AWS SSM.
     """
+
     def __init__(
         self,
         scope: cdk.Construct,
