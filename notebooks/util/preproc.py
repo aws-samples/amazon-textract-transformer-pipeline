@@ -518,7 +518,12 @@ def build_data_manifest(
             # List the matching page images in S3:
             rel_filedir, _, filename = rel_filepath.rpartition("/")
             filename_root = filename.rpartition(".")[0]
-            file_img_s3key_prefix = f"{imgs_s3key_root}/{rel_filedir}/{filename_root}"
+            file_img_s3key_prefix = "".join((
+                imgs_s3key_root,
+                "/",
+                rel_filedir + "/" if rel_filedir else "",
+                filename_root,
+            ))
             img_candidate_s3keys = list(
                 map(
                     lambda o: o.key,
@@ -537,7 +542,12 @@ def build_data_manifest(
                 )
             )
             if img_candidate_pagenums != list(range(1, len(doc.pages) + 1)):
-                logger.warn(f"Mismatch in doc, excluding from manifest: {rel_filepath}")
+                if len(img_candidate_pagenums) == 0:
+                    logger.warn(
+                        f"No page images found for doc, excluding from manifest: {rel_filepath}"
+                    )
+                else:
+                    logger.warn(f"Mismatch in doc, excluding from manifest: {rel_filepath}")
                 warnings.append(
                     DataManifestWarning(
                         textract_s3uri=file_textract_s3uri,
