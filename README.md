@@ -2,8 +2,9 @@
 
 [Amazon Textract](https://docs.aws.amazon.com/textract/latest/dg/what-is.html) is a service that automatically extracts text, handwriting, and structured data from scanned documents: Going beyond simple optical character recognition (OCR) to identify and extract data from tables (with rows and cells), and forms (as key-value pairs).
 
-In this sample we demonstrate how you can integrate Textract with advanced, trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/) (an end-to-end platform for machine learning) to automate even highly complex and domain-specific structure extraction tasks - that may benefit from additional intelligence beyond the tools available within Textract itself.
+In this sample we show how you can automate even highly complex and domain-specific structure extraction tasks by integrating Textract with trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/) - for additional, customizable intelligence.
 
+We demonstrate **layout-aware entity extraction** on an example use case in finance, for which you could also consider [using Amazon Comprehend](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/). However, this pipeline provides a framework you could extend or customize for your own ML models and data.
 
 ## Background
 
@@ -11,11 +12,11 @@ To automate document understanding for business processes, we typically need to 
 
 With Amazon Textract's [structure extraction utilities for forms and tables](https://aws.amazon.com/textract/features/), many of these requirements are trivial out of the box with no custom training required. For example: "pull out the text of the third column, second row of the first table on page 1", or "pull out what the customer wrote in for the `Email address:` section of the form".
 
-We can also use AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze extracted text. For example: picking out `date` entities on a purchase order that may not be explicitly "labelled" in the text - perhaps because sometimes the date just appears by itself in the page header.
+We can also use AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze extracted text. For example: picking out `date` entities on a purchase order that may not be explicitly "labelled" in the text - perhaps because sometimes the date just appears by itself in the page header. However, often these services and models treat text as a flat 1D sequence of words.
 
 Since Textract also outputs the *positions* of each detected 'block' of text, we can even write advanced templating rules in our solution code. For example: "Find text matching XX/XX/XXXX within the top 5% of the page height".
 
-**However:** What about use cases needing still more intelligence? Where, even with these tools, writing rule-based logic to extract the specific information you need is too challenging?
+But what about use cases needing still more intelligence? Where, even with these tools, writing rule-based logic to extract the specific information you need is too challenging?
 
 For some use cases, incoming documents are highly variable so simple position-based templating methods may not work well... And the content of the text needs to be accounted for as well. For example:
 
@@ -68,6 +69,8 @@ To build and deploy this solution, you'll first need to install:
 
 You'll also need to [bootstrap your CDK environment](https://docs.aws.amazon.com/cdk/latest/guide/bootstrapping.html#bootstrapping-howto) **with the modern template** (i.e. setting `CDK_NEW_BOOTSTRAP=1`, as described in the docs).
 
+> 🚀 **To try the solution out with your own documents and entity types:** Review the standard steps below first, but find further guidance in [CUSTOMIZATION_GUIDE.md](CUSTOMIZATION_GUIDE.md).
+
 **Step 1: Set up and activate the project's virtual environment**
 
 If you're using Poetry, you should be able to simply run (from this folder):
@@ -100,12 +103,14 @@ pip install -e .[dev]
 
 **Step 3: Deploy the solution stacks with CDK**
 
-To deploy (or update, if already deployed) all stacks in the solution, run:
+To deploy (or update, if already deployed) all stacks in the solution to your default AWS Region, run:
 
 ```sh
 cdk deploy --all
 # To skip approval prompts, you can optionally add: --require-approval never
 ```
+
+> Note that some AWS Regions may not support all services required to run the solution, but it has been tested successfully in at least `ap-southeast-1` (Singapore) and `us-east-2` (Ohio).
 
 You'll be able to see the deployed stacks in the [AWS CloudFormation Console](https://console.aws.amazon.com/cloudformation/home?#/stacks).
 
