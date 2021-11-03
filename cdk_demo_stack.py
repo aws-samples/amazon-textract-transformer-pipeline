@@ -106,6 +106,7 @@ class PipelineDemoStack(cdk.Stack):
                         sid="RunPlainTextractStateMachine",
                     ),
                 ]
+                + self.annotation_infra.get_data_science_policy_statements()
                 + self.pipeline.config_read_write_statements()
                 # In the notebooks we'll use the same execution role for the trained model/endpoint
                 # as the notebook itself runs with - so need to grant the role the required perms
@@ -191,6 +192,16 @@ class PipelineDemoStack(cdk.Stack):
         # able to automatically look up project resources from SageMaker notebooks. To support
         # this, we'll create additional SSM params used just to *retrieve* static attributes of the
         # stack - rather than configuration points like the ProcessingPipeline construct's params.
+        self.sm_image_build_role_ssm_param = ssm.StringParameter(
+            self,
+            "SMImageBuildRoleSSMParam",
+            string_value=self.annotation_infra.sm_image_build_role.role_name,
+            description=(
+                "Name of the CodeBuild execution role to use in SMStudio Image Build commands"
+            ),
+            parameter_name=f"/{self.project_id_param.value_as_string}/static/SMDockerBuildRole",
+            simple_name=False,
+        )
         self.input_bucket_ssm_param = ssm.StringParameter(
             self,
             "InputBucketNameSSMParam",
@@ -239,6 +250,7 @@ class PipelineDemoStack(cdk.Stack):
         self.data_science_policy.add_statements(
             SsmParameterReadStatement(
                 resources=[
+                    self.sm_image_build_role_ssm_param,
                     self.input_bucket_ssm_param,
                     self.reviews_bucket_ssm_param,
                     self.pipeline_statemachine_ssm_param,

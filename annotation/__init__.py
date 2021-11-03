@@ -7,11 +7,15 @@ Lambda functions.
 """
 # Python Built-Ins:
 import os
+from typing import List
 
 # External Dependencies:
 from aws_cdk import core as cdk
 from aws_cdk.aws_iam import (
+    Effect,
     ManagedPolicy,
+    PolicyDocument,
+    PolicyStatement,
     Role,
     ServicePrincipal,
 )
@@ -29,6 +33,140 @@ class AnnotationInfra(cdk.Construct):
 
     def __init__(self, scope: cdk.Construct, id: str, **kwargs):
         super().__init__(scope, id, **kwargs)
+
+        self.sm_image_build_role = Role(
+            self,
+            "SMImageBuildRole",
+            assumed_by=ServicePrincipal("codebuild.amazonaws.com"),
+            description=(
+                "CodeBuild Role for data scientist to build ECR containers for OCR preprocessing"
+            ),
+            inline_policies={
+                "OCRPipelineImageBuild": PolicyDocument(
+                    # Scoped down from permissions defined by the sagemaker-studio-image-build-cli:
+                    # https://github.com/aws-samples/sagemaker-studio-image-build-cli
+                    statements=[
+                        PolicyStatement(
+                            sid="CreateCodeBuildLogStreams",
+                            actions=["logs:CreateLogStream"],
+                            effect=Effect.ALLOW,
+                            resources=[
+                                "arn:aws:logs:*:*:log-group:/aws/codebuild/sagemaker-studio*",
+                            ],
+                        ),
+                        PolicyStatement(
+                            sid="CreateLogGroups",
+                            actions=["logs:CreateLogGroup"],
+                            effect=Effect.ALLOW,
+                            resources=["*"],
+                        ),
+                        PolicyStatement(
+                            sid="CodeBuildLogEvents",
+                            actions=[
+                                "logs:GetLogEvents",
+                                "logs:PutLogEvents",
+                            ],
+                            effect=Effect.ALLOW,
+                            resources=[
+                                "arn:aws:logs:*:*:log-group:/aws/codebuild/sagemaker-studio*:log-stream:*",
+                            ],
+                        ),
+                        PolicyStatement(
+                            sid="ECRLogInToken",
+                            actions=["ecr:GetAuthorizationToken"],
+                            effect=Effect.ALLOW,
+                            resources=["*"],
+                        ),
+                        PolicyStatement(
+                            sid="ECRReadWrite",
+                            actions=[
+                                "ecr:CreateRepository",
+                                "ecr:BatchGetImage",
+                                "ecr:CompleteLayerUpload",
+                                "ecr:DescribeImages",
+                                "ecr:DescribeRepositories",
+                                "ecr:UploadLayerPart",
+                                "ecr:ListImages",
+                                "ecr:InitiateLayerUpload", 
+                                "ecr:BatchCheckLayerAvailability",
+                                "ecr:PutImage",
+                            ],
+                            effect=Effect.ALLOW,
+                            resources=[
+                                # We'll only allow a specific repo name, rather than any default:
+                                #"arn:aws:ecr:*:*:repository/sagemaker-studio*",
+                                "arn:aws:ecr:*:*:repository/sm-scikit-ocrtools",
+                            ],
+                        ),
+                        PolicyStatement(
+                            sid="AccessPreBuiltAWSImages",
+                            actions=[
+                                "ecr:BatchGetImage",
+                                "ecr:GetDownloadUrlForLayer",
+                            ],
+                            effect=Effect.ALLOW,
+                            resources=[
+                                "arn:aws:ecr:*:121021644041:repository/*",
+                                "arn:aws:ecr:*:763104351884:repository/*",
+                                "arn:aws:ecr:*:217643126080:repository/*",
+                                "arn:aws:ecr:*:727897471807:repository/*",
+                                "arn:aws:ecr:*:626614931356:repository/*",
+                                "arn:aws:ecr:*:683313688378:repository/*",
+                                "arn:aws:ecr:*:520713654638:repository/*",
+                                "arn:aws:ecr:*:462105765813:repository/*",
+                            ],
+                        ),
+                        PolicyStatement(
+                            sid="BundleCodeToS3",
+                            actions=[
+                                "s3:GetObject",
+                                "s3:DeleteObject",
+                                "s3:PutObject",
+                            ],
+                            effect=Effect.ALLOW,
+                            resources=[
+                                # Tightened this up a bit vs the default:
+                                # "arn:aws:s3:::sagemaker-*/*"
+                                "arn:aws:s3:::sagemaker-*/codebuild-sagemaker-container-*"
+                            ],
+                        ),
+                        # Omit this one because the user should have it already per our guidance,
+                        # and if they don't already it's probably best to fail than quietly grant:
+                        # PolicyStatement(
+                        #     sid="CreateSageMakerDefaultBucketIfMissing",
+                        #     actions=["s3:CreateBucket"],
+                        #     effect=Effect.ALLOW,
+                        #     resources=["arn:aws:s3:::sagemaker*"],
+                        # ),
+
+                        # Only required if not explicitly passing a --role (which we will):
+                        # PolicyStatement(
+                        #     sid="LookUpIAMRoles",
+                        #     actions=["iam:GetRole", "iam:ListRoles"],
+                        #     effect=Effect.ALLOW,
+                        #     resources=["*"],
+                        # ),
+
+                        # Only required if building within VPCs (which we won't):
+                        # PolicyStatement(
+                        #     sid="VPCAccess",
+                        #     actions=[
+                        #         "ec2:CreateNetworkInterface",
+                        #         "ec2:CreateNetworkInterfacePermission",
+                        #         "ec2:DescribeDhcpOptions",
+                        #         "ec2:DescribeNetworkInterfaces",
+                        #         "ec2:DeleteNetworkInterface",
+                        #         "ec2:DescribeSubnets",
+                        #         "ec2:DescribeSecurityGroups",
+                        #         "ec2:DescribeVpcs"
+                        #     ],
+                        #     effect=Effect.ALLOW,
+                        #     resources=["*"],
+                        # ),
+                    ],
+                ),
+            }
+        )
 
         self.lambda_role = Role(
             self,
@@ -83,3 +221,30 @@ class AnnotationInfra(cdk.Construct):
     @property
     def post_lambda(self):
         return self._post_lambda
+
+    def get_data_science_policy_statements(self) -> List[PolicyStatement]:
+        """Generate policy statements required for data scientist to use the annotation infra
+        """
+        return [
+            PolicyStatement(
+                sid="PassSMImageBuildRole",
+                actions=["iam:PassRole"],
+                resources=[self.sm_image_build_role.role_arn],
+                conditions={
+                    "StringLikeIfExists": {
+                        "iam:PassedToService": "codebuild.amazonaws.com",
+                    },
+                },
+            ),
+            PolicyStatement(
+                sid="EditSMStudioCodeBuildProjects",
+                actions=[
+                    "codebuild:DeleteProject",
+                    "codebuild:CreateProject",
+                    "codebuild:BatchGetBuilds",
+                    "codebuild:StartBuild",
+                ],
+                effect=Effect.ALLOW,
+                resources=["arn:aws:codebuild:*:*:project/sagemaker-studio*"],
+            ),
+        ]
