@@ -8,11 +8,9 @@
 from aws_cdk import core as cdk
 
 # Local Dependencies:
-from annotation import AnnotationInfraStack
-from pipeline import ProcessingPipelineStack
+from cdk_demo_stack import PipelineDemoStack
 
 
 app = cdk.App()
-annotation_stack = AnnotationInfraStack(app, "AnnotationStack")
-pipeline_stack = ProcessingPipelineStack(app, "PipelineStack")
+demo_stack = PipelineDemoStack(app, "OCRPipelineDemo", default_project_id="ocr-transformers-demo")
 app.synth()

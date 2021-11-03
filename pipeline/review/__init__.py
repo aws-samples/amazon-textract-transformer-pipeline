@@ -30,6 +30,7 @@ class A2IReviewStep(cdk.Construct):
     to manually review the model's prediction, and the Step Function execution will be resumed when
     the review is complete, with an updated $.ModelResult in the output state.
     """
+
     def __init__(
         self,
         scope: cdk.Construct,

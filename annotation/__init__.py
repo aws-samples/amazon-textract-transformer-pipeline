@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""CDK Construct and Stack for infrastructure to support data annotation/labelling
+"""CDK Construct for infrastructure to support data annotation/labelling
 
 Custom SageMaker Ground Truth templates require custom pre-processing and result-consolidation
 Lambda functions.
@@ -25,8 +25,8 @@ POST_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-SMGT-Post")
 
 
 class AnnotationInfra(cdk.Construct):
-    """CDK construct for custom SageMaker Ground Truth annotation task infrastructure
-    """
+    """CDK construct for custom SageMaker Ground Truth annotation task infrastructure"""
+
     def __init__(self, scope: cdk.Construct, id: str, **kwargs):
         super().__init__(scope, id, **kwargs)
 
@@ -83,13 +83,3 @@ class AnnotationInfra(cdk.Construct):
     @property
     def post_lambda(self):
         return self._post_lambda
-
-
-class AnnotationInfraStack(cdk.Stack):
-    """Deployable CDK stack for custom SageMaker Ground Truth annotation task infrastructure
-
-    This stack bundles the AnnotationInfra construct for deployment.
-    """
-    def __init__(self, scope: cdk.Construct, construct_id: str, **kwargs) -> None:
-        super().__init__(scope, construct_id, **kwargs)
-        self.construct = AnnotationInfra(self, "AnnotationInfra")

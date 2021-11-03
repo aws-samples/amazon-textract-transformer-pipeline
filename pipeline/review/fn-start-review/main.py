@@ -31,6 +31,7 @@ default_flow_definition_arn_param = os.environ.get("DEFAULT_FLOW_DEFINITION_ARN_
 
 class MalformedRequest(ValueError):
     """Returned to SFN when input event structure is invalid"""
+
     pass
 
 

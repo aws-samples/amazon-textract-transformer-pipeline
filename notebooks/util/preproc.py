@@ -51,6 +51,19 @@ def s3_object_exists(bucket_name: str, key: str) -> bool:
             raise e
 
 
+def get_exif_tag_id_by_name(name: str) -> Optional[str]:
+    """Find a numeric EXIF tag ID by common name
+
+    As per https://pillow.readthedocs.io/en/stable/reference/ExifTags.html
+    """
+    try:
+        return next(
+            k for k in ExifTags.TAGS.keys() if ExifTags.TAGS[k] == name
+        )
+    except StopIteration:
+        return None
+
+
 class ImageExtractionResult:
     """Result descriptor for extracting a source image/document to image(s)"""
 
@@ -66,7 +79,7 @@ def clean_dataset_for_img_ocr(
     filepaths: Optional[Iterable[str]] = None,
     pdf_dpi: int = 300,
     pdf_image_format: str = "png",
-    textract_compatible_formats: Iterable[str] = ("jpg", "jpeg", "png"),
+    allowed_formats: Iterable[str] = ("jpg", "jpeg", "png"),
     preferred_image_format: str = "png",
 ) -> List[ImageExtractionResult]:
     """Process a mixed PDF/image dataset for use with SageMaker Ground Truth image task UIs
@@ -86,9 +99,12 @@ def clean_dataset_for_img_ocr(
         DPI resolution to extract images from PDFs (Default 300).
     pdf_image_format : str
         Format to extract images from PDFs (Default 'png').
-    textract_compatible_formats : Iterable[str]
-        The set of compatible file formats for Textract: Used to determine whether to convert
+    allowed_formats : Iterable[str]
+        The set of permitted file formats for compatibility: Used to determine whether to convert
         source images in other formats which PIL may still have been able to successfully load.
+        NOTE: Amazon Textract also supports 'tiff', but we left it out of the default list because
+        TIFF images seemed to break the SageMaker Ground Truth built-in bounding box UI as of some
+        tests in 2021-10. Default ('jpg', 'jpeg', 'png').
     preferred_image_format : str
         Format to be used when an image has been saved/converted (Default 'png').
     """
@@ -105,7 +121,7 @@ def clean_dataset_for_img_ocr(
                 (os.path.join(path, f) for path, _, files in os.walk(from_path) for f in files),
             )
         )
-    n_files_total = len(filepaths)
+    ORIENTATION_EXIF_ID = get_exif_tag_id_by_name("Orientation")
     os.makedirs(to_path, exist_ok=True)
 
     for filepath in tqdm(filepaths, desc="Processing input files...", unit="file"):
@@ -145,20 +161,27 @@ def clean_dataset_for_img_ocr(
                     "\n    - ".join(result.cleanpaths),
                 )
             )
-        else:
-            try:
-                image = PIL.Image.open(filepath)
-            except PIL.UnidentifiedImageError:
-                logger.warning(f"* Ignoring incompatible file: {filepath}")
-                continue
+            continue  # PDF processed successfully
+
+        try:
+            image = PIL.Image.open(filepath)
+        except PIL.UnidentifiedImageError:
+            logger.warning(f"* Ignoring incompatible file: {filepath}")
+            continue  # Skip file
+            
+        # Some "image" formats (notably TIFF) support multiple pages as "frames":
+        n_image_pages = getattr(image, "n_frames", 1)
+        if n_image_pages > 1:
+            logger.info("Extracting %s pages from file %s", n_image_pages, filepath)
+        convert_format = not ext_lower in allowed_formats
+        outpaths = []
+        for ixpage in range(n_image_pages):
+            if n_image_pages > 1:
+                image.seek(ixpage)
 
             # Correct orientation from EXIF data:
-            for orientation in ExifTags.TAGS.keys():
-                if ExifTags.TAGS[orientation] == "Orientation":
-                    break
-            exif = dict((image._getexif() or {}).items())
-            img_orientation = exif.get(orientation)
-            logger.info("Image {} has orientation {}".format(filepath, img_orientation))
+            exif = dict((image.getexif() or {}).items())
+            img_orientation = exif.get(ORIENTATION_EXIF_ID)
             if img_orientation == 3:
                 image = image.rotate(180, expand=True)
                 rotated = True
@@ -171,21 +194,38 @@ def clean_dataset_for_img_ocr(
             else:
                 rotated = False
 
-            if ext_lower not in textract_compatible_formats:
-                outpath = os.path.join(outfolder, f"{basename}.{preferred_image_format}")
-                image.save(outpath)
-                logger.info(f"* Converted image {filepath} to {outpath}")
-            elif rotated:
+            if n_image_pages == 1 and not (convert_format or rotated):
+                # Special case where image file can just be copied across:
                 outpath = os.path.join(outfolder, filename)
-                image.save(outpath)
-                logger.info(f"* Rotated image {filepath} to {outpath}")
-            else:
-                outpath = os.path.join(outfolder, filename)
-
                 shutil.copy2(filepath, outpath)
-                logger.info(f"* Copied file {filepath} to {outpath}")
-            result.cleanpaths = [outpath]
-            results.append(result)
+            else:
+                outpath = os.path.join(
+                    outfolder,
+                    "".join((
+                        basename,
+                        "-%04i" % (ixpage + 1) if n_image_pages > 1 else "",
+                        ".",
+                        preferred_image_format if convert_format else ext,
+                    )),
+                )
+                image.save(outpath)
+
+            outpaths.append(outpath)
+            logger.info(
+                "* %s image %s%s (orientation %s) to %s",
+                "Converted" if convert_format else (
+                    "Rotated" if rotated else (
+                        "Extracted" if n_image_pages > 1 else "Copied"
+                    )
+                ),
+                filepath,
+                f" page {ixpage + 1}" if n_image_pages > 1 else "",
+                img_orientation,
+                outpath,
+            )
+
+        result.cleanpaths = outpaths
+        results.append(result)
 
     logger.info("Done!")
     return results
@@ -519,7 +559,12 @@ def build_data_manifest(
             # List the matching page images in S3:
             rel_filedir, _, filename = rel_filepath.rpartition("/")
             filename_root = filename.rpartition(".")[0]
-            file_img_s3key_prefix = f"{imgs_s3key_root}/{rel_filedir}/{filename_root}"
+            file_img_s3key_prefix = "".join((
+                imgs_s3key_root,
+                "/",
+                rel_filedir + "/" if rel_filedir else "",
+                filename_root,
+            ))
             img_candidate_s3keys = list(
                 map(
                     lambda o: o.key,
@@ -538,7 +583,12 @@ def build_data_manifest(
                 )
             )
             if img_candidate_pagenums != list(range(1, len(doc.pages) + 1)):
-                logger.warn(f"Mismatch in doc, excluding from manifest: {rel_filepath}")
+                if len(img_candidate_pagenums) == 0:
+                    logger.warn(
+                        f"No page images found for doc, excluding from manifest: {rel_filepath}"
+                    )
+                else:
+                    logger.warn(f"Mismatch in doc, excluding from manifest: {rel_filepath}")
                 warnings.append(
                     DataManifestWarning(
                         textract_s3uri=file_textract_s3uri,
