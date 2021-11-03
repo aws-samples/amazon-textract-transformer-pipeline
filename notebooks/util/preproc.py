@@ -9,19 +9,14 @@ from datetime import datetime
 import json
 from logging import getLogger
 from math import ceil
-import os
 import re
-import shutil
 import time
 from types import SimpleNamespace
 from typing import Iterable, List, Optional, Union
 
 # External Dependencies:
 import boto3
-import pdf2image
 import numpy as np
-import PIL
-from PIL import ExifTags
 from tqdm.notebook import tqdm  # Progress bars
 import trp  # Amazon Textract Response Parser
 
@@ -35,11 +30,6 @@ s3client = boto3.client("s3")
 sfn = boto3.client("stepfunctions")
 
 
-def split_filename(filename):
-    basename, _, ext = filename.rpartition(".")
-    return basename, ext
-
-
 def s3_object_exists(bucket_name: str, key: str) -> bool:
     try:
         s3client.head_object(Bucket=bucket_name, Key=key)
@@ -49,184 +39,6 @@ def s3_object_exists(bucket_name: str, key: str) -> bool:
             return False
         else:
             raise e
-
-
-def get_exif_tag_id_by_name(name: str) -> Optional[str]:
-    """Find a numeric EXIF tag ID by common name
-
-    As per https://pillow.readthedocs.io/en/stable/reference/ExifTags.html
-    """
-    try:
-        return next(k for k in ExifTags.TAGS.keys() if ExifTags.TAGS[k] == name)
-    except StopIteration:
-        return None
-
-
-class ImageExtractionResult:
-    """Result descriptor for extracting a source image/document to image(s)"""
-
-    def __init__(self, rawpath: str, cleanpaths: List[str] = [], cats: List[str] = []):
-        self.rawpath = rawpath
-        self.cleanpaths = cleanpaths
-        self.cats = cats
-
-
-def clean_dataset_for_img_ocr(
-    from_path: str,
-    to_path: str,
-    filepaths: Optional[Iterable[str]] = None,
-    pdf_dpi: int = 300,
-    pdf_image_format: str = "png",
-    allowed_formats: Iterable[str] = ("jpg", "jpeg", "png"),
-    preferred_image_format: str = "png",
-) -> List[ImageExtractionResult]:
-    """Process a mixed PDF/image dataset for use with SageMaker Ground Truth image task UIs
-
-    Extracts page images from PDFs, converts EXIF-rotated images to data-rotated.
-
-    Parameters
-    ----------
-    from_path : str
-        Base path of the raw/source dataset to be converted
-    to_path : str
-        Target path for converted files (subfolder structure will be preserved from source)
-    filepaths : Optional[Iterable[str]]
-        Paths (relative to from_path, no leading slash) to filter down the processing. If not
-        provided, the whole from_path folder will be recursively crawled.
-    pdf_dpi : int
-        DPI resolution to extract images from PDFs (Default 300).
-    pdf_image_format : str
-        Format to extract images from PDFs (Default 'png').
-    allowed_formats : Iterable[str]
-        The set of permitted file formats for compatibility: Used to determine whether to convert
-        source images in other formats which PIL may still have been able to successfully load.
-        NOTE: Amazon Textract also supports 'tiff', but we left it out of the default list because
-        TIFF images seemed to break the SageMaker Ground Truth built-in bounding box UI as of some
-        tests in 2021-10. Default ('jpg', 'jpeg', 'png').
-    preferred_image_format : str
-        Format to be used when an image has been saved/converted (Default 'png').
-    """
-    # TODO: DeleteMe and any other no-longer-required utils with new SMProcessing job
-    results = []
-    if filepaths:
-        # Users will supply relative filepaths, but our code below expects to include from_path:
-        filepaths = [os.path.join(from_path, p) for p in filepaths]
-    else:
-        # List input files automatically by walking the from_path dir:
-        filepaths = list(
-            filter(
-                lambda path: "/." not in path,  # Ignore hidden stuff e.g. .ipynb_checkpoints
-                (os.path.join(path, f) for path, _, files in os.walk(from_path) for f in files),
-            )
-        )
-    ORIENTATION_EXIF_ID = get_exif_tag_id_by_name("Orientation")
-    os.makedirs(to_path, exist_ok=True)
-
-    for filepath in tqdm(filepaths, desc="Processing input files...", unit="file"):
-        filename = os.path.basename(filepath)
-        subfolder = os.path.dirname(filepath)[len(from_path) :]  # Includes leading slash!
-        outfolder = to_path + subfolder
-        os.makedirs(outfolder, exist_ok=True)
-        basename, ext = split_filename(filename)
-        ext_lower = ext.lower()
-        result = ImageExtractionResult(
-            rawpath=filepath,
-            cleanpaths=[],
-            cats=subfolder[1:].split(os.path.sep),  # Strip leading slash to avoid initial ''
-        )
-        if ext_lower == "pdf":
-            logger.info(
-                "Converting {} to {}/{}*.{}".format(
-                    filepath,
-                    outfolder,
-                    basename + "-",
-                    pdf_image_format,
-                )
-            )
-            images = pdf2image.convert_from_path(
-                filepath,
-                output_folder=outfolder,
-                output_file=basename + "-",
-                # TODO: Use paths_only option to return paths instead of image objs
-                fmt=pdf_image_format,
-                dpi=pdf_dpi,
-            )
-            result.cleanpaths = [i.filename for i in images]
-            results.append(result)
-            logger.info(
-                "* PDF converted {}:\n    - {}".format(
-                    filepath,
-                    "\n    - ".join(result.cleanpaths),
-                )
-            )
-            continue  # PDF processed successfully
-
-        try:
-            image = PIL.Image.open(filepath)
-        except PIL.UnidentifiedImageError:
-            logger.warning(f"* Ignoring incompatible file: {filepath}")
-            continue  # Skip file
-
-        # Some "image" formats (notably TIFF) support multiple pages as "frames":
-        n_image_pages = getattr(image, "n_frames", 1)
-        if n_image_pages > 1:
-            logger.info("Extracting %s pages from file %s", n_image_pages, filepath)
-        convert_format = not ext_lower in allowed_formats
-        outpaths = []
-        for ixpage in range(n_image_pages):
-            if n_image_pages > 1:
-                image.seek(ixpage)
-
-            # Correct orientation from EXIF data:
-            exif = dict((image.getexif() or {}).items())
-            img_orientation = exif.get(ORIENTATION_EXIF_ID)
-            if img_orientation == 3:
-                image = image.rotate(180, expand=True)
-                rotated = True
-            elif img_orientation == 6:
-                image = image.rotate(270, expand=True)
-                rotated = True
-            elif img_orientation == 8:
-                image = image.rotate(90, expand=True)
-                rotated = True
-            else:
-                rotated = False
-
-            if n_image_pages == 1 and not (convert_format or rotated):
-                # Special case where image file can just be copied across:
-                outpath = os.path.join(outfolder, filename)
-                shutil.copy2(filepath, outpath)
-            else:
-                outpath = os.path.join(
-                    outfolder,
-                    "".join(
-                        (
-                            basename,
-                            "-%04i" % (ixpage + 1) if n_image_pages > 1 else "",
-                            ".",
-                            preferred_image_format if convert_format else ext,
-                        )
-                    ),
-                )
-                image.save(outpath)
-
-            outpaths.append(outpath)
-            logger.info(
-                "* %s image %s%s (orientation %s) to %s",
-                "Converted"
-                if convert_format
-                else ("Rotated" if rotated else ("Extracted" if n_image_pages > 1 else "Copied")),
-                filepath,
-                f" page {ixpage + 1}" if n_image_pages > 1 else "",
-                img_orientation,
-                outpath,
-            )
-
-        result.cleanpaths = outpaths
-        results.append(result)
-
-    logger.info("Done!")
-    return results
 
 
 def call_textract(
