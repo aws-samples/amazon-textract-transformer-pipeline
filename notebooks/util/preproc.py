@@ -57,9 +57,7 @@ def get_exif_tag_id_by_name(name: str) -> Optional[str]:
     As per https://pillow.readthedocs.io/en/stable/reference/ExifTags.html
     """
     try:
-        return next(
-            k for k in ExifTags.TAGS.keys() if ExifTags.TAGS[k] == name
-        )
+        return next(k for k in ExifTags.TAGS.keys() if ExifTags.TAGS[k] == name)
     except StopIteration:
         return None
 
@@ -168,7 +166,7 @@ def clean_dataset_for_img_ocr(
         except PIL.UnidentifiedImageError:
             logger.warning(f"* Ignoring incompatible file: {filepath}")
             continue  # Skip file
-            
+
         # Some "image" formats (notably TIFF) support multiple pages as "frames":
         n_image_pages = getattr(image, "n_frames", 1)
         if n_image_pages > 1:
@@ -201,23 +199,23 @@ def clean_dataset_for_img_ocr(
             else:
                 outpath = os.path.join(
                     outfolder,
-                    "".join((
-                        basename,
-                        "-%04i" % (ixpage + 1) if n_image_pages > 1 else "",
-                        ".",
-                        preferred_image_format if convert_format else ext,
-                    )),
+                    "".join(
+                        (
+                            basename,
+                            "-%04i" % (ixpage + 1) if n_image_pages > 1 else "",
+                            ".",
+                            preferred_image_format if convert_format else ext,
+                        )
+                    ),
                 )
                 image.save(outpath)
 
             outpaths.append(outpath)
             logger.info(
                 "* %s image %s%s (orientation %s) to %s",
-                "Converted" if convert_format else (
-                    "Rotated" if rotated else (
-                        "Extracted" if n_image_pages > 1 else "Copied"
-                    )
-                ),
+                "Converted"
+                if convert_format
+                else ("Rotated" if rotated else ("Extracted" if n_image_pages > 1 else "Copied")),
                 filepath,
                 f" page {ixpage + 1}" if n_image_pages > 1 else "",
                 img_orientation,
@@ -559,12 +557,14 @@ def build_data_manifest(
             # List the matching page images in S3:
             rel_filedir, _, filename = rel_filepath.rpartition("/")
             filename_root = filename.rpartition(".")[0]
-            file_img_s3key_prefix = "".join((
-                imgs_s3key_root,
-                "/",
-                rel_filedir + "/" if rel_filedir else "",
-                filename_root,
-            ))
+            file_img_s3key_prefix = "".join(
+                (
+                    imgs_s3key_root,
+                    "/",
+                    rel_filedir + "/" if rel_filedir else "",
+                    filename_root,
+                )
+            )
             img_candidate_s3keys = list(
                 map(
                     lambda o: o.key,

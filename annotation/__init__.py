@@ -87,14 +87,14 @@ class AnnotationInfra(cdk.Construct):
                                 "ecr:DescribeRepositories",
                                 "ecr:UploadLayerPart",
                                 "ecr:ListImages",
-                                "ecr:InitiateLayerUpload", 
+                                "ecr:InitiateLayerUpload",
                                 "ecr:BatchCheckLayerAvailability",
                                 "ecr:PutImage",
                             ],
                             effect=Effect.ALLOW,
                             resources=[
                                 # We'll only allow a specific repo name, rather than any default:
-                                #"arn:aws:ecr:*:*:repository/sagemaker-studio*",
+                                # "arn:aws:ecr:*:*:repository/sagemaker-studio*",
                                 "arn:aws:ecr:*:*:repository/sm-scikit-ocrtools",
                             ],
                         ),
@@ -138,7 +138,6 @@ class AnnotationInfra(cdk.Construct):
                         #     effect=Effect.ALLOW,
                         #     resources=["arn:aws:s3:::sagemaker*"],
                         # ),
-
                         # Only required if not explicitly passing a --role (which we will):
                         # PolicyStatement(
                         #     sid="LookUpIAMRoles",
@@ -146,7 +145,6 @@ class AnnotationInfra(cdk.Construct):
                         #     effect=Effect.ALLOW,
                         #     resources=["*"],
                         # ),
-
                         # Only required if building within VPCs (which we won't):
                         # PolicyStatement(
                         #     sid="VPCAccess",
@@ -165,7 +163,7 @@ class AnnotationInfra(cdk.Construct):
                         # ),
                     ],
                 ),
-            }
+            },
         )
 
         self.lambda_role = Role(
@@ -223,8 +221,7 @@ class AnnotationInfra(cdk.Construct):
         return self._post_lambda
 
     def get_data_science_policy_statements(self) -> List[PolicyStatement]:
-        """Generate policy statements required for data scientist to use the annotation infra
-        """
+        """Generate policy statements required for data scientist to use the annotation infra"""
         return [
             PolicyStatement(
                 sid="PassSMImageBuildRole",

@@ -92,7 +92,7 @@ def clean_dataset_for_img_ocr(
         # Because we use all available cores, things can become unhappy if we don't provide a
         # little breathing space for any background procesess:
         time.sleep(0.5)
-        
+
         filename = os.path.basename(filepath)
         subfolder = os.path.dirname(filepath)[len(from_path) :]  # Includes leading slash!
         outfolder = to_path + subfolder
@@ -176,19 +176,27 @@ def clean_dataset_for_img_ocr(
 
 
 def parse_args():
-    """Parse SageMaker Processing Job CLI arguments to job parameters
-    """
+    """Parse SageMaker Processing Job CLI arguments to job parameters"""
     parser = argparse.ArgumentParser(
         description="Split and standardize documents into images for OCR"
     )
-    parser.add_argument("--input", type=str, default="/opt/ml/processing/input/raw",
-        help="Folder where raw input images/documents are stored"
+    parser.add_argument(
+        "--input",
+        type=str,
+        default="/opt/ml/processing/input/raw",
+        help="Folder where raw input images/documents are stored",
     )
-    parser.add_argument("--output", type=str, default="/opt/ml/processing/output/imgs-clean",
-        help="Folder where cleaned output images should be saved"
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="/opt/ml/processing/output/imgs-clean",
+        help="Folder where cleaned output images should be saved",
     )
-    parser.add_argument("--n-workers", type=int, default=cpu_count(),
-        help="Number of worker processes to use for extraction (default #CPU cores)"
+    parser.add_argument(
+        "--n-workers",
+        type=int,
+        default=cpu_count(),
+        help="Number of worker processes to use for extraction (default #CPU cores)",
     )
     args = parser.parse_args()
     return args
@@ -203,16 +211,18 @@ if __name__ == "__main__":
     args = parse_args()
 
     logger.info(f"Reading raw files from {args.input}")
-    rel_filepaths_all = sorted(filter(
-        lambda f: not (f.startswith(".") or "/." in f), # (Exclude hidden dot-files)
-        [
-            os.path.join(currpath, name)[len(args.input) + 1:]  # +1 for trailing '/'
-            for currpath, dirs, files in os.walk(args.input)
-            for name in files
-        ]
-    ))
+    rel_filepaths_all = sorted(
+        filter(
+            lambda f: not (f.startswith(".") or "/." in f),  # (Exclude hidden dot-files)
+            [
+                os.path.join(currpath, name)[len(args.input) + 1 :]  # +1 for trailing '/'
+                for currpath, dirs, files in os.walk(args.input)
+                for name in files
+            ],
+        )
+    )
     logger.info(rel_filepaths_all[:10])
-    
+
     logger.info(f"Processing {len(rel_filepaths_all)} files across {args.n_workers} processes")
     with Pool(args.n_workers) as pool:
         # TODO: Test pooling individual samples rather than list slices
@@ -224,7 +234,7 @@ if __name__ == "__main__":
                 {
                     "from_path": args.input,
                     "to_path": args.output,
-                    "filepaths": rel_filepaths_all[ix::args.n_workers],
+                    "filepaths": rel_filepaths_all[ix :: args.n_workers],
                 }
                 for ix in range(args.n_workers)
             ],
