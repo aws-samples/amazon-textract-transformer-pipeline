@@ -92,6 +92,7 @@ def clean_dataset_for_img_ocr(
     preferred_image_format : str
         Format to be used when an image has been saved/converted (Default 'png').
     """
+    # TODO: DeleteMe and any other no-longer-required utils with new SMProcessing job
     results = []
     if filepaths:
         # Users will supply relative filepaths, but our code below expects to include from_path:
