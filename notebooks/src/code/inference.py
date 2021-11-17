@@ -313,8 +313,9 @@ def predict_fn(input_data: dict, model: dict):
 
         # Iterate batches:
         block_results_map = defaultdict(list)
-        for ixstart, _ in enumerate(examples[::INFERENCE_BATCH_SIZE]):
-            batch_examples = examples[ixstart : (ixstart + INFERENCE_BATCH_SIZE)]
+        for ixbatch, _ in enumerate(examples[::INFERENCE_BATCH_SIZE]):
+            ixbatchstart = ixbatch * INFERENCE_BATCH_SIZE
+            batch_examples = examples[ixbatchstart : (ixbatchstart + INFERENCE_BATCH_SIZE)]
             batch = collator(batch_examples)
             for name in batch:  # Collect batch tensors to same GPU/target device:
                 batch[name] = batch[name].to(device)
@@ -328,7 +329,7 @@ def predict_fn(input_data: dict, model: dict):
 
             # Map (sub-word, token-level) predictions per Textract BLOCK:
             for ixoffset, _ in enumerate(batch_examples):
-                word_block_ids = example_word_block_ids[ixstart + ixoffset]
+                word_block_ids = example_word_block_ids[ixbatchstart + ixoffset]
                 word_ids = batch.word_ids(ixoffset)
                 for ixtoken, ixword in enumerate(word_ids):
                     if ixword is not None:
@@ -348,4 +349,4 @@ def predict_fn(input_data: dict, model: dict):
             block["PredictedClass"] = int(np.argmax(block_probs))
             block["PredictedClassConfidence"] = float(block_probs[block["PredictedClass"]])
 
-        return {"doc_json": doc_json, "s3_output": s3_output}
+    return {"doc_json": doc_json, "s3_output": s3_output}
