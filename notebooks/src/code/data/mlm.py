@@ -35,9 +35,9 @@ class TextractLayoutLMDataCollatorForLanguageModelling(DataCollatorForLanguageMo
     """Collator to process (batches of) Examples into batched model inputs
 
     For this case, tokenization can happen at the batch level which allows us to pad to the longest
-    sample in batch rather than the overall model max_seq_len. Word splitting is already done by
-    Textract, and some custom logic is required to feed through the bounding box inputs from
-    Textract (at word level) to the model inputs (at token level).
+    sample in batch rather than the overall model max_seq_len - for efficiency. Word splitting is
+    already done by Textract, and some custom logic is required to feed through the bounding box
+    inputs from Textract (at word level) to the model inputs (at token level).
     """
 
     bos_token_box: Tuple[int, int, int, int] = (0, 0, 0, 0)

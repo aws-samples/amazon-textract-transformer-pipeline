@@ -30,7 +30,7 @@ logger = getLogger("data.base")
 
 @dataclass
 class TaskData:
-    """Base interface exposed by the different task types (MLM, NER, etc) to training scripts
+    """Base data interface exposed by the different task types (MLM, NER, etc) to training scripts
 
     Each new task module should implement a method get_task(data_args, tokenizer) -> TaskData
     """
@@ -70,7 +70,13 @@ class ExampleSplitterBase:
 
 
 class NaiveExampleSplitter(ExampleSplitterBase):
-    """Split sequences by word, and pull final sequence start forward to fill max allowable length"""
+    """Split sequences by word, and pull final sequence start forward if it comes up <50% max len
+
+    This algorithm produces examples by splitting tokens on word boundaries, extending each sample
+    until max_content_seq_len is filled. *IF* the final generated example is less than 50% of the
+    maximum tokens, its start index will be pulled forward to consume as many words as will fit.
+    Apart from this, there will be no overlap between examples.
+    """
 
     @classmethod
     def n_examples(cls, n_tokens: int, max_content_seq_len: int) -> int:
@@ -143,7 +149,15 @@ class NaiveExampleSplitter(ExampleSplitterBase):
 
 
 class TextractLayoutLMDatasetBase(Dataset):
-    """Base class for PyTorch/Hugging Face dataset using Amazon Textract for LayoutLM-based models"""
+    """Base class for PyTorch/Hugging Face dataset using Amazon Textract for LayoutLM-based models
+
+    The base dataset assumes fixed/known length, which typically requires analyzing the source data
+    on init - but avoids the complications of shuffling iterable dataset samples in a multi-process
+    environment, or introducing SageMaker Pipe Mode and RecordIO formats.
+
+    Source data is provided as a folder of Amazon Textract result JSONs, with an optional JSONLines
+    manifest file annotating the documents in case the task is supervised.
+    """
 
     def __init__(
         self,
@@ -286,8 +300,8 @@ class TextractLayoutLMDatasetBase(Dataset):
 class DummyDataCollator:
     """Data collator that just stacks tensors from inputs.
 
-    For use with Dataset classes where the leg-work is already done and HF's default
-    "DataCollatorWithPadding" should explicitly *not* be used.
+    For use with Dataset classes where the tokenization and collation leg-work is already done and
+    HF's default "DataCollatorWithPadding" should explicitly *not* be used.
     """
 
     def __call__(self, features):

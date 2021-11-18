@@ -10,10 +10,12 @@ def get_hf_metric_regex(metric_name: str) -> str:
     {'eval_loss': 0.3940396010875702, ..., 'epoch': 1.0}
     """
     scientific_number_exp = r"(-?[0-9]+(\.[0-9]+)?(e[+\-][0-9]+)?)"
-    return "".join((
-        "'",
-        metric_name,
-        "': ",
-        scientific_number_exp,
-        "[,}]",
-    ))
+    return "".join(
+        (
+            "'",
+            metric_name,
+            "': ",
+            scientific_number_exp,
+            "[,}]",
+        )
+    )

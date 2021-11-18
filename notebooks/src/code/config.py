@@ -74,7 +74,7 @@ class SageMakerTrainingArguments(TrainingArguments):
         metadata={"help": "The evaluation strategy to use."},
     )
     save_strategy: IntervalStrategy = field(
-        # We'd like some eval metrics by default, rather than the usual "no" strategy
+        # Should match evaluation strategy for early stopping to work
         default="epoch",
         metadata={"help": "The model save strategy to use."},
     )

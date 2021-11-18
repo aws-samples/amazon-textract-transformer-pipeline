@@ -14,8 +14,8 @@ import trp
 class AnnotationBoundingBox:
     """Class to parse a bounding box annotated by SageMaker Ground Truth Object Detection
 
-    Calculates all box TLHWBR metrics (both absolute and relative) on init, for efficient and easy
-    processing later.
+    Pre-calculates all box TLHWBR metrics (both absolute and relative) on init, for efficient and
+    easy processing later.
     """
 
     def __init__(self, manifest_box: dict, image_height: int, image_width: int):
@@ -90,6 +90,14 @@ class BoundingBoxAnnotationResult:
     """Class to parse the result field saved by a SageMaker Ground Truth Object Detection job"""
 
     def __init__(self, manifest_obj: dict):
+        """Initialize a BoundingBoxAnnotationResult
+
+        Arguments
+        ---------
+        manifest_obj : dict
+            The contents of the output field of a record in a SMGT Object Detection labelling job
+            output manifest, or equivalent.
+        """
         try:
             image_size_spec = manifest_obj["image_size"][0]
             self._image_height = int(image_size_spec["height"])
@@ -101,9 +109,9 @@ class BoundingBoxAnnotationResult:
             raise ValueError(
                 "".join(
                     (
-                        "manifest_obj must be a dictionary including 'image_size': a list of length 1 ",
-                        "whose first/only element is a dict with integer properties 'height' and ",
-                        f"'width', optionally also 'depth'. Got: {manifest_obj}",
+                        "manifest_obj must be a dictionary including 'image_size': a list of ",
+                        "length 1 whose first/only element is a dict with integer properties ",
+                        f"'height' and 'width', optionally also 'depth'. Got: {manifest_obj}",
                     )
                 )
             ) from e
