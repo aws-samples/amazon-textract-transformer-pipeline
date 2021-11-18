@@ -62,5 +62,6 @@ dictConfig(
 from . import preproc
 from . import project
 from . import smgt
+from . import training
 from . import uid
 from . import viz
