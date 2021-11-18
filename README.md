@@ -1,18 +1,20 @@
 # Post-Process OCR Results with Transformer Models on Amazon SageMaker
 
-[Amazon Textract](https://docs.aws.amazon.com/textract/latest/dg/what-is.html) is a service that automatically extracts text, handwriting, and structured data from scanned documents: Going beyond simple optical character recognition (OCR) to identify and extract data from tables (with rows and cells), and forms (as key-value pairs).
+[Amazon Textract](https://docs.aws.amazon.com/textract/latest/dg/what-is.html) is a service that automatically extracts text, handwriting, and some structured data from scanned documents: Going beyond simple optical character recognition (OCR) to identify and extract data from tables (with rows and cells), and forms (as key-value pairs).
 
-In this sample we show how you can automate even highly complex and domain-specific structure extraction tasks by integrating Textract with trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/) - for additional, customizable intelligence.
+In this "Amazon Textract Transformer Pipeline" sample and accompanying [blog post](https://aws.amazon.com/blogs/machine-learning/bring-structure-to-diverse-documents-with-amazon-textract-and-transformer-based-models-on-amazon-sagemaker/), we show how you can also automate more complex and domain-specific extraction tasks by integrating trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/).
 
-We demonstrate **layout-aware entity extraction** on an example use case in finance, for which you could also consider [using Amazon Comprehend](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/). However, this pipeline provides a framework you could extend or customize for your own ML models and data.
+We demonstrate **layout-aware entity extraction** on an example use case in finance, for which you could also consider using [Amazon Comprehend's native document analysis feature](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/).
+
+However, this pipeline provides a framework you could further extend or customize for your own datasets and ML-based, OCR post-processing models.
 
 ## Background
 
 To automate document understanding for business processes, we typically need to extract and standardize specific attributes from input documents: For example vendor and line item details from purchase orders; or specific clauses within contracts.
 
-With Amazon Textract's [structure extraction utilities for forms and tables](https://aws.amazon.com/textract/features/), many of these requirements are trivial out of the box with no custom training required. For example: "pull out the text of the third column, second row of the first table on page 1", or "pull out what the customer wrote in for the `Email address:` section of the form".
+With Amazon Textract's [structure extraction utilities for forms and tables](https://aws.amazon.com/textract/features/), many of these requirements are trivial out of the box with no custom training required. For example: "pull out the text of the third column, second row of the first table on page 1", or "find what the customer wrote in for the `Email address:` section of the form".
 
-We can also use AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze extracted text. For example: picking out `date` entities on a purchase order that may not be explicitly "labelled" in the text - perhaps because sometimes the date just appears by itself in the page header. However, often these services and models treat text as a flat 1D sequence of words.
+We can also use standard text processing models or AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze extracted text. For example: picking out `date` entities on a purchase order that may not be explicitly "labelled" in the text - perhaps because sometimes the date just appears by itself in the page header. However, many standard approaches treat text as a flat 1D sequence of words.
 
 Since Textract also outputs the *positions* of each detected 'block' of text, we can even write advanced templating rules in our solution code. For example: "Find text matching XX/XX/XXXX within the top 5% of the page height".
 

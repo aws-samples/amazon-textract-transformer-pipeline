@@ -107,3 +107,34 @@ Once the features are enabled for your pipeline, you can edit the post-processin
 For example you could loop through the rows and cells of detected `TABLE`s in your document, using the SageMaker entity model results for each `WORD` to find the specific records and columns that you're interested in.
 
 If you need to change the output format for the post-processing Lambda function, note that the A2I human review template will likely also need to be updated.
+
+
+## Customizing the models
+
+### How much data do I need?
+
+As demonstrated in the credit card agreements example, the answer to this question is strongly affected by how "hard" your particular extraction problem is for the model. Particular factors that can make learning difficult include:
+
+- Relying on important context "hundreds of words away" or across page boundaries - since each model inference analyzes a limited-length subset of the words on an individual page.
+- Noisy or inconsistent annotations - disagreement or inconsistency between annotators is more common than you might initially expect, and this noise makes it difficult for the model to identify the right common patterns to learn.
+- High importance of numbers or other unusual tokens - language models like these aren't well suited to mathematical analysis, so sense checks like "these line items should all add up to the total" or "this number should be bigger than that one" that may make sense to humans will not be obvious to the model.
+
+A practical solution is to start small, and **run experiments with varying hold-out/validation set sizes**: Analyzing how performance changed with dataset size up to what you have today, can give an indication of how what incremental value you might get by continuing to collect and annotate more.
+
+Depending on your task and document diversity, you may be able to start getting an initial idea of what seems "easy" with as few as 20 annotated pages, but may need hundreds to get a more confident view of what's "hard".
+
+
+### Should I pre-train to my domain, or just fine-tune?
+
+Because much more un-labelled domain data (Textracted documents) is usually available than labelled data (pages with manual annotations) for a use case, the compute infrastructure and/or time required for pre-training is usually significantly larger than fine-tuning jobs.
+
+For this reason, it's typically best to **first experiment with fine-tuning the public base models** - before exploring what improvements might be achievable with domain-specific pre-training. It's also useful to understand the relative value of the effort of collecting more labelled data (see *How much data do I need?*) to compare against dedicating resources to pre-training.
+
+Unless your domain diverges strongly from the data the public model was trained on (for example trying to transfer to a new language or an area heavy with unusual grammar/jargon), accuracy improvements from continuation pre-training are likely to be small and incremental rather than revolutionary. To consider from-scratch pre-training (without a public model base), you'll typically need a particularly large and diverse corpus (as per training BERT from scratch) to get good results.
+
+> ⚠️ **Note:** Some extra code modifications may be required to pre-train from scratch (for example to initialize a new tokenizer from the source data).
+
+There may be other factors aside from accuracy that influence your decision to pre-train. Notably:
+
+- **Bias** - Large language models have been shown to learn not just grammar and semantics from datasets, but other patterns too: Meaning practitioners must consider the potential biases in source datasets, and what real-world harms this could cause if the model brings learned stereotypes to the target use case. For example see [*"StereoSet: Measuring stereotypical bias in pretrained language models", (2020)*](https://arxiv.org/abs/2004.09456)
+- **Privacy** - In some specific circumstances (for example [*"Extracting Training Data from Large Language Models", 2020*](https://arxiv.org/abs/2012.07805)) it has been shown that input data can be reverse-engineered from trained large language models. Protections against this may be required, depending how your model is exposed to users.
