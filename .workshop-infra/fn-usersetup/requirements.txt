@@ -1,0 +1,4 @@
+# GitPython provides Python bindings for git *assuming you already have the git binaries installed*
+# - We've handled this via a 3rd party Lambda Layer, but you could instead consider instead using a
+# PyPI package like 'lambda-git' which bundles binaries.
+gitpython>=3.1,<4
