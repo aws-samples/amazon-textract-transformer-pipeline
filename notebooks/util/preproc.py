@@ -12,7 +12,7 @@ from math import ceil
 import re
 import time
 from types import SimpleNamespace
-from typing import Iterable, List, Optional, Union
+from typing import Iterable, List, Optional, Tuple, Union
 
 # External Dependencies:
 import boto3
@@ -274,6 +274,94 @@ def trp_page_has_content(page: trp.Page) -> bool:
     return len(page.lines) > 0
 
 
+def find_cleaned_page_imgs_by_textract_uri(
+    rel_filepath: str,
+    imgs_s3uri: str,
+) -> Tuple[List[str], List[Union[int, None]]]:
+    """Find cleaned page images (and their expected page numbers) on S3 for a doc in the corpus
+
+    This function essentially reconstructs logic applied by the image cleaning pre-processing job
+    to locate cleaned images in S3 for a given raw document in the corpus: Including multi-page
+    PDFs, TIFFs, or single-page input images like JPEGs. Returned objects are verified to actually
+    exist in S3 at the time the function was called.
+
+    Parameters
+    ----------
+    rel_filepath : str
+        Relative path to a raw document or image in the corpus (i.e. within the data/raw folder)
+    imgs_s3uri : str
+        's3://...' root URI under which cleaned page images are stored, with filenames generated
+        from documents as per `clean_dataset_for_img_ocr()`
+
+    Returns
+    -------
+    img_candidate_s3keys: List[str]
+        List of S3 object keys which (have been tested to exist and) are expected to correspond to
+        cleaned page images of the input document. Not necessarily in page number order.
+    img_candidate_pagenums: List[Union[str, NoneType]]
+        Inferred (1-based) page number for each entry in `img_candidate_s3keys`, or `None` if page
+        number could not be inferred for that object.
+    """
+    # pdf2image outputs look like {MyOriginalFileBaseName}-0000-00.{FileExt}:
+    PDF2IMAGE_REGEX = re.compile(r"^-\d{4,}-\d+.(?:png|jpg|jpeg)$", re.IGNORECASE)
+    NONPDF_REGEX = re.compile(r"^(-\d{4,})?.(?:png|jpg|jpeg)$", re.IGNORECASE)
+
+    imgs_bucket_name, _, imgs_s3key_root = imgs_s3uri[len("s3://") :].partition("/")
+    imgs_bucket = s3.Bucket(imgs_bucket_name)
+
+    rel_filedir, _, filename = rel_filepath.rpartition("/")
+    filename_root, _, extension = filename.rpartition(".")
+    extension = extension.lower()
+    file_img_s3key_prefix = "".join(
+        (
+            imgs_s3key_root,
+            "/",
+            rel_filedir + "/" if rel_filedir else "",
+            filename_root,
+        )
+    )
+
+    raw_candidate_objs = imgs_bucket.objects.filter(Prefix=file_img_s3key_prefix)
+
+    if extension == "pdf":
+        # Use the pdf2image regex to find images and associate page numbers:
+        img_candidate_s3keys = list(
+            map(
+                lambda o: o.key,
+                filter(
+                    lambda o: PDF2IMAGE_REGEX.match(o.key[len(file_img_s3key_prefix):]),
+                    raw_candidate_objs,
+                ),
+            )
+        )
+        img_candidate_pagenums = list(
+            map(
+                lambda f: int(f.rpartition(".")[0].rpartition("-")[2]),
+                img_candidate_s3keys,
+            )
+        )
+    else:
+        # Could be a single-page (e.g. PNG) or multi-page (e.g. TIFF) image:
+        raw_candidate_s3keys = [o.key for o in raw_candidate_objs]
+        regex_matches = [
+            NONPDF_REGEX.match(k[len(file_img_s3key_prefix):])
+            for k in raw_candidate_s3keys
+        ]
+        
+        img_candidate_s3keys = [
+            raw_candidate_s3keys[ix]
+            for ix in range(len(regex_matches))
+            if regex_matches[ix]
+        ]
+        
+        if len(img_candidate_s3keys) == 1:
+            img_candidate_pagenums = [1]
+        else:
+            img_candidate_pagenums = [int(match.group(1)) for match in regex_matches if match]
+    
+    return img_candidate_s3keys, img_candidate_pagenums
+
+
 def build_data_manifest(
     manifest_file: str,
     rel_doc_paths: Iterable[str],
@@ -342,11 +430,7 @@ def build_data_manifest(
                 f"`no_content` option must be 'omit', 'flag', or None. Got: {no_content}"
             )
 
-    # pdf2image outputs look like {MyOriginalFileBaseName}-0000-00.{FileExt}:
-    pdf2image_regex = re.compile(r"-\d{4,}-\d+.(?:png|jpg|jpeg)", re.IGNORECASE)
-
-    imgs_bucket_name, _, imgs_s3key_root = imgs_s3uri[len("s3://") :].partition("/")
-    imgs_bucket = s3.Bucket(imgs_bucket_name)
+    imgs_bucket_name = imgs_s3uri[len("s3://") :].partition("/")[0]
     textract_bucket_name, _, textract_s3key_root = textract_s3uri[len("s3://") :].partition("/")
     textract_bucket = s3.Bucket(textract_bucket_name)
 
@@ -367,32 +451,9 @@ def build_data_manifest(
                 pages_have_content = [trp_page_has_content(p) for p in doc.pages]
 
             # List the matching page images in S3:
-            rel_filedir, _, filename = rel_filepath.rpartition("/")
-            filename_root = filename.rpartition(".")[0]
-            file_img_s3key_prefix = "".join(
-                (
-                    imgs_s3key_root,
-                    "/",
-                    rel_filedir + "/" if rel_filedir else "",
-                    filename_root,
-                )
-            )
-            img_candidate_s3keys = list(
-                map(
-                    lambda o: o.key,
-                    filter(
-                        lambda o: pdf2image_regex.match(o.key[len(file_img_s3key_prefix) :]),
-                        imgs_bucket.objects.filter(Prefix=file_img_s3key_prefix),
-                    ),
-                )
-            )
-
-            # Validate that we have one image per page of the Textract doc:
-            img_candidate_pagenums = list(
-                map(
-                    lambda f: int(f.rpartition(".")[0].rpartition("-")[2]),
-                    img_candidate_s3keys,
-                )
+            img_candidate_s3keys, img_candidate_pagenums = find_cleaned_page_imgs_by_textract_uri(
+                rel_filepath,
+                imgs_s3uri=imgs_s3uri,
             )
             if img_candidate_pagenums != list(range(1, len(doc.pages) + 1)):
                 if len(img_candidate_pagenums) == 0:
