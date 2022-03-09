@@ -73,9 +73,9 @@ Steps 0-3 below are for locally building and deploying the CDK solution and requ
 
 > ⚠️ **Note** before using this option:
 > - This bootstrap stack grants broad IAM permissions to the created AWS CodeBuild project role for deploying the sample - so it's **not recommended for use in production environments.**
-> - Creating (or updating) the bootstrap stack will *start* the process of fetching and deploying the latest sample code, but *not wait for it to finish*. Check the [AWS CodeBuild console](https://console.aws.amazon.com/codesuite/codebuild/projects) for build project status and you'll see additional separate [CloudFormation stacks](https://console.aws.amazon.com/cloudformation/home?#/stacks) created.
-> - Likewise deleting the bootstrap stack will not delete the sample deployment: You can clean up by deleting the other CloudFormation stacks.
 > - If using the 'Launch Stack' button above, remember to check it opens the Console in the correct AWS Region you want to deploy in and switch regions if necessary.
+> - Creating (or updating) the bootstrap stack will *start* the process of fetching and deploying the latest sample code, but *not wait for it to finish*. Check the AWS CodeBuild console (link in the bootstrap stack 'Outputs' tab) for build project status and you should see additional separate [CloudFormation stacks](https://console.aws.amazon.com/cloudformation/home?#/stacks) created within a few minutes.
+> - Likewise deleting the bootstrap stack will not delete the sample deployment: You can clean up by deleting the other CloudFormation stacks.
 
 The bootstrap stack pretty much runs the following steps 0-3 for you in an AWS CodeBuild environment, instead of locally on your computer:
 
