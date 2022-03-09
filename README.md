@@ -63,13 +63,46 @@ By orchestrating the process through AWS Step Functions (rather than point-to-po
 
 ## Getting Started
 
-To build and deploy this solution, you'll first need to install:
+To deploy this sample you'll need access to your target AWS Account with sufficient *permissions* to deploy the various resources created by the solution (which includes IAM resources).
 
-- The [AWS CDK](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_install) (which depends on [NodeJS](https://nodejs.org/en/)).
+**Skipping local setup**
+
+Steps 0-3 below are for locally building and deploying the CDK solution and require setting up some developer-oriented tools. If you can't do this or prefer not to, you can **deploy the following "bootstrap" CloudFormation stack and skip to step 4**:
+
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/create/review?templateURL=https://s3.amazonaws.com/amazon-textract-transformer-pipeline-assets/attp-bootstrap.cfn.yaml&stackName=ATTPBootstrap "Launch Stack") (Or use [.infrastructure/attp-bootstrap.cfn.yaml](.infrastructure/attp-bootstrap.cfn.yaml))
+
+> ⚠️ **Note** before using this option:
+> - This bootstrap stack grants broad IAM permissions to the created AWS CodeBuild project role for deploying the sample - so it's **not recommended for use in production environments.**
+> - Creating (or updating) the bootstrap stack will *start* the process of fetching and deploying the latest sample code, but *not wait for it to finish*. Check the [AWS CodeBuild console](https://console.aws.amazon.com/codesuite/codebuild/projects) for build project status and you'll see additional separate [CloudFormation stacks](https://console.aws.amazon.com/cloudformation/home?#/stacks) created.
+> - Likewise deleting the bootstrap stack will not delete the sample deployment: You can clean up by deleting the other CloudFormation stacks.
+> - If using the 'Launch Stack' button above, remember to check it opens the Console in the correct AWS Region you want to deploy in and switch regions if necessary.
+
+The bootstrap stack pretty much runs the following steps 0-3 for you in an AWS CodeBuild environment, instead of locally on your computer:
+
+**Step 0: Local build prerequisites**
+
+To build and deploy this solution, you'll first need:
+
+- The [AWS CDK](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_install), which depends on [NodeJS](https://nodejs.org/en/).
 - [Python v3.6+](https://www.python.org/)
+- [Docker](https://www.docker.com/products/docker-desktop) installed and running (which is used for [bundling Python Lambda functions](https://docs.aws.amazon.com/cdk/api/v1/docs/aws-lambda-python-readme.html)).
+  - You can see the [discussion here](https://github.com/aws/aws-cdk/issues/16209) on using [podman](https://podman.io/) as an alternative with CDK if Docker Desktop licensing is not available for you.
 - (Optional but recommended) consider using [Poetry](https://python-poetry.org/docs/#installation) rather than Python's built-in `pip`.
 
-You'll also need to [bootstrap your CDK environment](https://docs.aws.amazon.com/cdk/latest/guide/bootstrapping.html#bootstrapping-howto) **with the modern template** (i.e. setting `CDK_NEW_BOOTSTRAP=1`, as described in the docs).
+CDK Lambda Function bundling uses container images hosted on [Amazon ECR Public](https://docs.aws.amazon.com/AmazonECR/latest/public/what-is-ecr.html), so you'll likely need to [authenticate](https://docs.aws.amazon.com/AmazonECR/latest/public/public-registries.html#public-registry-auth) to pull these. For example:
+
+```sh
+# (Always us-east-1 here, regardless of your target region)
+aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+```
+
+You'll also need to [bootstrap your AWS environment for CDK](https://docs.aws.amazon.com/cdk/latest/guide/bootstrapping.html#bootstrapping-howto) **with the modern template** if you haven't already. For example:
+
+```sh
+# Assuming your AWS CLI Account and AWS_REGION / AWS_DEFAULT_REGION are set:
+export CDK_NEW_BOOTSTRAP=1
+cdk bootstrap
+```
 
 > 🚀 **To try the solution out with your own documents and entity types:** Review the standard steps below first, but find further guidance in [CUSTOMIZATION_GUIDE.md](CUSTOMIZATION_GUIDE.md).
 
@@ -112,7 +145,7 @@ cdk deploy --all
 # To skip approval prompts, you can optionally add: --require-approval never
 ```
 
-> Note that some AWS Regions may not support all services required to run the solution, but it has been tested successfully in at least `ap-southeast-1` (Singapore) and `us-east-2` (Ohio).
+> Note that some AWS Regions may not support all services required to run the solution, but it has been tested successfully in at least `ap-southeast-1` (Singapore), `us-east-1` (N. Virginia) and `us-east-2` (Ohio).
 
 You'll be able to see the deployed stacks in the [AWS CloudFormation Console](https://console.aws.amazon.com/cloudformation/home?#/stacks).
 

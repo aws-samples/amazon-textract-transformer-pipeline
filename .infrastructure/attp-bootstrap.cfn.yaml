@@ -1,0 +1,237 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: |-
+  Quick-start CloudFormation template to deploy the Amazon Textract Transformer Pipeline sample via
+  AWS CodeBuild - with no local CDK/Docker/Python/etc developer setup required.
+
+  This stack sets up a CodeBuild Project to deploy the main solution and triggers the build once
+  (via AWS Lambda) on stack create, plus again whenever the CodeBuildTrigger resource is updated.
+  Grants broad permissions to CodeBuild - not recommended for use in production environments.
+
+Parameters:
+  CodeRepo:
+    Type: String
+    Default: https://github.com/aws-samples/amazon-textract-transformer-pipeline
+    Description: URL of the public git repository to use
+
+Resources:
+  CodeBuildServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: StackDeploymentPerms
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: IAMAccess
+                Effect: Allow
+                Action:
+                  - 'iam:AttachRolePolicy'
+                  - 'iam:CreatePolicy'
+                  - 'iam:CreatePolicyVersion'
+                  - 'iam:CreateRole'
+                  - 'iam:DeletePolicy'
+                  - 'iam:DeletePolicyVersion'
+                  - 'iam:DeleteRole'
+                  - 'iam:DeleteRolePolicy'
+                  - 'iam:GetPolicy'
+                  - 'iam:GetPolicyVersion'
+                  - 'iam:GetRole'
+                  - 'iam:GetRolePolicy'
+                  - 'iam:PutRolePolicy'
+                  - 'iam:TagPolicy'
+                  - 'iam:TagRole'
+                  - 'iam:UpdateRole'
+                  - 'iam:UpdateRoleDescription'
+                Resource: '*'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/PowerUserAccess'
+
+  CodeBuildProject:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      ConcurrentBuildLimit: 1
+      Description: 'CDK stack deployer'
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: PUBLIC_REPO
+            Type: PLAINTEXT
+            Value: !Ref CodeRepo
+        Image: 'aws/codebuild/standard:5.0'
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true  # Need to build container images within the project
+        Type: LINUX_CONTAINER
+      QueuedTimeoutInMinutes: 60
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Source:
+        BuildSpec: |
+          version: 0.2
+          env:
+            variables:
+              CDK_NEW_BOOTSTRAP: "1"
+          phases:
+            pre_build:
+              commands:
+                - set -ex
+                - curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/install-poetry.py | python -
+                - export PATH="/root/.local/bin:$PATH"
+                - npm install -g aws-cdk
+            build:
+              commands:
+                - set -ex
+                - git clone --depth 1 $PUBLIC_REPO code
+                - cd code
+                - poetry install
+                - poetry run cdk bootstrap
+                - poetry run cdk deploy --all --require-approval never
+        SourceIdentifier: coderepo
+        Type: NO_SOURCE
+      TimeoutInMinutes: 40
+
+  # Creating a CodeBuild project in CloudFormation doesn't automatically start a build, so below we
+  # set up an AWS Lambda Function based Custom Resource to trigger the build whenever the stack is
+  # created or updated:
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: RunCodeBuildProject
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: IAMAccess
+                Effect: Allow
+                Action:
+                  - 'codebuild:StartBuild'
+                Resource:
+                  - !GetAtt CodeBuildProject.Arn
+
+  CodeBuildTriggerFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Description: 'CloudFormation custom resource implementation for running CodeBuild project'
+      Code:
+        ZipFile: |
+          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+          """Custom CloudFormation Resource to kick off CodeBuild project builds
+          """
+
+          # Python Built-Ins:
+          import logging
+          import traceback
+
+          # External Dependencies:
+          import boto3
+          import cfnresponse
+
+          codebuild = boto3.client("codebuild")
+
+          def lambda_handler(event, context):
+              try:
+                  request_type = event["RequestType"]
+                  if request_type == "Create":
+                      handle_create(event, context)
+                  elif request_type == "Update":
+                      handle_update(event, context)
+                  elif request_type == "Delete":
+                      handle_delete(event, context)
+                  else:
+                      cfnresponse.send(
+                          event,
+                          context,
+                          cfnresponse.FAILED,
+                          { "Reason": f"Unsupported CFN RequestType '{request_type}'" },
+                      )
+              except Exception as e:
+                  logging.error("Uncaught exception in CFN custom resource handler - reporting failure")
+                  traceback.print_exc()
+                  cfnresponse.send(
+                      event,
+                      context,
+                      cfnresponse.FAILED,
+                      { "Reason": str(e) },
+                  )
+                  raise e
+
+          def handle_create(event, context):
+              logging.info("**Received create request")
+              resource_config = event["ResourceProperties"]
+              logging.info("**Running CodeBuild Job")
+              result = codebuild.start_build(
+                  projectName=resource_config["ProjectName"],
+              )
+              cfnresponse.send(
+                  event,
+                  context,
+                  cfnresponse.SUCCESS,
+                  { "Reason": f"Started CodeBuild #{result['build']['buildNumber']}" },
+                  physicalResourceId=result["build"]["arn"],
+              )
+
+          def handle_delete(event, context):
+              logging.info("**Received delete event - no-op")
+              cfnresponse.send(
+                  event,
+                  context,
+                  cfnresponse.SUCCESS,
+                  { "Reason": "Delete is no-op" },
+                  physicalResourceId=event["PhysicalResourceId"],
+              )
+
+          def handle_update(event, context):
+              logging.info("**Received update event - re-running build")
+              resource_config = event["ResourceProperties"]
+              result = codebuild.start_build(
+                  projectName=resource_config["ProjectName"],
+              )
+              cfnresponse.send(
+                  event,
+                  context,
+                  cfnresponse.SUCCESS,
+                  { "Reason": f"Started CodeBuild #{result['build']['buildNumber']}" },
+                  physicalResourceId=event["PhysicalResourceId"],
+              )
+
+      Handler: 'index.lambda_handler'
+      MemorySize: 128
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.8
+      Timeout: 900
+    
+  CodeBuildTrigger:
+    Type: 'Custom::CodeBuildTrigger'
+    Properties:
+      ServiceToken: !GetAtt CodeBuildTriggerFunction.Arn
+      ProjectName: !Ref CodeBuildProject
+
+Outputs:
+  CodeBuildProjectArn:
+    Description: ARN of the AWS CodeBuild project created to deploy the solution
+    Value: !GetAtt CodeBuildProject.Arn
+  CodeBuildProjectName:
+    Description: Name of the AWS CodeBuild project created to deploy the solution
+    Value: !Ref CodeBuildProject
+  CodeBuildConsoleLink:
+    Description: Link to project in AWS CodeBuild Console
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/codesuite/codebuild/${AWS::AccountId}/projects/${CodeBuildProject}'
