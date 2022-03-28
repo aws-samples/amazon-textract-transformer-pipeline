@@ -169,7 +169,7 @@ function viewerZoomOut() {
       /></crowd-button>
     </div>
     <div ref="viewerRef" class="pdfViewer"></div>
-    <div class="load-error" :hidden="!error">
+    <div class="load-error" :style="{ display: error ? null : 'none' }">
       <iron-icon icon="error-outline"></iron-icon>
       <h3>Sorry, failed to load the PDF document for this task!</h3>
       <p>Try refreshing the page and contact the task administrator if the error persists.</p>
