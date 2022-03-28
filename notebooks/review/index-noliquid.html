@@ -1,0 +1,205 @@
+<!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  SPDX-License-Identifier: MIT-0 -->
+<!-- Test document for exercising UI component functionality
+  This document is intended to closely mirror the main template source `index.html`, but include
+  actual representative initializations for components instead of Liquid HTML template syntax. This
+  provides an opportunity to interactively debug the UI (e.g. using `npm run dev` without having to
+  run the built template through the SageMaker RenderUiTemplate API each time.
+
+  Note that this template hard-codes a document source "/example.pdf" (not provided), so you'll
+  need to copy your own example.pdf file into the public/ folder if you want to view the preview
+  with document and detections. -->
+<script
+  src="https://cdn.jsdelivr.net/npm/element-internals-polyfill@1.1.2"
+  integrity="sha384-K1G02YJ7ONOXGAFQFaugMhB2to6REBuR2jp6E34Q+XQ5WetpA/yqZ+5vA+xbxnSf"
+  crossorigin="anonymous"
+></script>
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+  integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+  crossorigin="anonymous">
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.3.0/font/bootstrap-icons.css"
+  integrity="sha384-YdM/o2MTG+kIKs1sV/gSEWXZo5d1DdBeuo/6s8qMJd5I5FKkStdHSXeNukljrWUZ"
+  crossorigin="anonymous">
+<script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js"
+  integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW"
+  crossorigin="anonymous"
+></script>
+
+<script
+    src="https://cdn.jsdelivr.net/npm/amazon-textract-response-parser@0.1.2"
+    integrity="sha384-YC8g6Lps/fXgj+LHlcBWVNJ/CMeN4hdn2Jdur6WvIu3Dj+fH4ForvNTlFpOAf14p"
+    crossorigin="anonymous"
+></script>
+
+<!--
+  While many modern browsers support native PDF rendering (see https://pdfobject.com/static/), the
+  iframe within which SMGT/A2I task UIs run is sandboxed; and different browsers take different
+  decisions on whether their built-in PDF rendering plugins should be allowed in these contexts.
+
+  So for broader browser support, we'll use directly use the Mozilla PDF.js libraries which many of
+  these browser implementations are built on anyway:
+-->
+<script
+  src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/build/pdf.js"
+  integrity="sha384-sl/fkMcwR9TnDJg4Gmk12e9FfPA+VqSPn8xZ3fdj9gU+h8q1x1sbGpvKdUWtQ+UZ"
+  crossorigin="anonymous"
+></script>
+<script
+  src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/build/pdf.worker.js"
+  integrity="sha384-+/07xVmDoU9mF+4G57uKjgspJIDhW/d8pqp4qAFOR+AXbLp75k5djMpbz99sxEQc"
+  crossorigin="anonymous"
+></script>
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/web/pdf_viewer.css"
+  integrity="sha384-uLLDnQwn/dRYKmVlO9CjCPVXJCB8KbmxVH63cmOVqY/f5kYTyKAhXUDy+8ZmkPru"
+  crossorigin="anonymous">
+<script
+  src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/web/pdf_viewer.js"
+  integrity="sha384-tobFa454L+w29PR7fdTZD8WyBNgQoPfofsZTkjd/+ezZmsW2YjYJ4ds2SQfrBbo3"
+  crossorigin="anonymous"
+></script>
+
+<script>
+  window.taskData = {
+    taskObject: "{{ task.input.TaskObject | grant_read_access }}",
+    taskInput: "{&quot;ModelResult&quot;:{&quot;Confidence&quot;:0.07692307692307691,&quot;Fields&quot;:{&quot;APR - Balance Transfers&quot;:{&quot;ClassId&quot;:2,&quot;Confidence&quot;:0.6571257710456848,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;32e06f01-edf8-49ee-9d34-62b7601c8485&quot;,&quot;92be658e-4bbf-4cbc-a6a1-9facacdc5450&quot;,&quot;8ee460f7-3f82-4be2-981f-a5a90fb72948&quot;,&quot;be336f5b-ec2b-4c9f-9a98-e9052a440625&quot;,&quot;721655e9-3aa5-4ee0-8b9f-e9e35f794a22&quot;,&quot;0684e1e7-5067-46e6-8a15-6f84742c344f&quot;,&quot;3c10e6c7-f9b2-43cb-9d1c-d6f9fffbe9a6&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.012133175507187843,&quot;Left&quot;:0.3859257698059082,&quot;Top&quot;:0.5624880194664001,&quot;Width&quot;:0.3489566370844841},&quot;ClassId&quot;:2,&quot;ClassName&quot;:&quot;APR - Balance Transfers&quot;,&quot;Confidence&quot;:0.6571257710456848,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;9.74% , 10.74%, 11.74%, 14.74% or 16.74%,&quot;}],&quot;NumDetectedValues&quot;:1,&quot;NumDetections&quot;:1,&quot;Optional&quot;:true,&quot;SortOrder&quot;:2,&quot;Value&quot;:&quot;9.74% , 10.74%, 11.74%, 14.74% or 16.74%,&quot;},&quot;APR - Cash Advances&quot;:{&quot;ClassId&quot;:3,&quot;Confidence&quot;:0.24263609320552354,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;5069c320-c03b-4141-bae5-c0a6724696fc&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010600382462143898,&quot;Left&quot;:0.38662275671958923,&quot;Top&quot;:0.06389515846967697,&quot;Width&quot;:0.054978009313344955},&quot;ClassId&quot;:3,&quot;ClassName&quot;:&quot;APR - Cash Advances&quot;,&quot;Confidence&quot;:0.6725578308105469,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;17.90%&quot;},{&quot;Blocks&quot;:[&quot;742c22d9-f1c3-4656-b6c4-d14e3ffac47e&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010445322841405869,&quot;Left&quot;:0.38680940866470337,&quot;Top&quot;:0.10753807425498962,&quot;Width&quot;:0.05487068369984627},&quot;ClassId&quot;:3,&quot;ClassName&quot;:&quot;APR - Cash Advances&quot;,&quot;Confidence&quot;:0.8752750158309937,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;17.90%&quot;},{&quot;Blocks&quot;:[&quot;93658618-0210-4ffa-8335-bb268ccdf7ef&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.01051375363022089,&quot;Left&quot;:0.38649123907089233,&quot;Top&quot;:0.1509190797805786,&quot;Width&quot;:0.054951731115579605},&quot;ClassId&quot;:3,&quot;ClassName&quot;:&quot;APR - Cash Advances&quot;,&quot;Confidence&quot;:0.9543682932853699,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;17.90%&quot;}],&quot;NumDetectedValues&quot;:6,&quot;NumDetections&quot;:11,&quot;Optional&quot;:true,&quot;SortOrder&quot;:3,&quot;Value&quot;:&quot;17.90%&quot;},&quot;APR - General&quot;:{&quot;ClassId&quot;:6,&quot;Confidence&quot;:0,&quot;Detections&quot;:[],&quot;NumDetectedValues&quot;:0,&quot;NumDetections&quot;:0,&quot;Optional&quot;:true,&quot;SortOrder&quot;:6,&quot;Value&quot;:&quot;&quot;},&quot;APR - Introductory&quot;:{&quot;ClassId&quot;:1,&quot;Confidence&quot;:0.3351292363751003,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;8eb1b515-afc9-4ca9-b00b-73ff31f8836c&quot;,&quot;e5109633-5d3f-4b74-8d19-19a263ba9f5b&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.012184686958789825,&quot;Left&quot;:0.7392318844795227,&quot;Top&quot;:0.5625559091567993,&quot;Width&quot;:0.07066696137189865},&quot;ClassId&quot;:1,&quot;ClassName&quot;:&quot;APR - Introductory&quot;,&quot;Confidence&quot;:0.5425662994384766,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;when you&quot;}],&quot;NumDetectedValues&quot;:4,&quot;NumDetections&quot;:4,&quot;Optional&quot;:true,&quot;SortOrder&quot;:1,&quot;Value&quot;:&quot;when you&quot;},&quot;APR - Other&quot;:{&quot;ClassId&quot;:7,&quot;Confidence&quot;:0,&quot;Detections&quot;:[],&quot;NumDetectedValues&quot;:0,&quot;NumDetections&quot;:0,&quot;Optional&quot;:true,&quot;SortOrder&quot;:7,&quot;Value&quot;:&quot;&quot;},&quot;APR - Penalty&quot;:{&quot;ClassId&quot;:5,&quot;Confidence&quot;:0,&quot;Detections&quot;:[],&quot;NumDetectedValues&quot;:0,&quot;NumDetections&quot;:0,&quot;Optional&quot;:true,&quot;SortOrder&quot;:5,&quot;Value&quot;:&quot;&quot;},&quot;APR - Purchases&quot;:{&quot;ClassId&quot;:4,&quot;Confidence&quot;:0.4381123982014198,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;9747ddda-0e2a-469d-8a50-5d0110f72973&quot;,&quot;d4999869-6743-4e62-bc82-091efd550917&quot;,&quot;9da92d9b-a2f6-4195-9c72-627d91f1f9a8&quot;,&quot;a4be4a8b-b654-4439-bd51-d93e69ca56da&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.018635660409927368,&quot;Left&quot;:0.3864731788635254,&quot;Top&quot;:0.4100354313850403,&quot;Width&quot;:0.3310415744781494},&quot;ClassId&quot;:4,&quot;ClassName&quot;:&quot;APR - Purchases&quot;,&quot;Confidence&quot;:0.9715049862861633,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;10.74%, 11.74% or 14.74%,&quot;}],&quot;NumDetectedValues&quot;:3,&quot;NumDetections&quot;:3,&quot;Optional&quot;:true,&quot;SortOrder&quot;:4,&quot;Value&quot;:&quot;10.74%, 11.74% or 14.74%,&quot;},&quot;Agreement Effective Date&quot;:{&quot;ClassId&quot;:0,&quot;Confidence&quot;:0.5148966312408447,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;ba908af8-3036-4c4b-9032-c862a1b41f34&quot;,&quot;7b522d93-d522-4912-9bab-2731311f3f27&quot;,&quot;bcf10aa6-25ea-4dfe-b3a9-4c5a4314db64&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.012554199434816837,&quot;Left&quot;:0.7078675031661987,&quot;Top&quot;:0.7815122008323669,&quot;Width&quot;:0.08861665800213814},&quot;ClassId&quot;:0,&quot;ClassName&quot;:&quot;Agreement Effective Date&quot;,&quot;Confidence&quot;:0.5148966312408447,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;July 1, 2020&quot;}],&quot;NumDetectedValues&quot;:1,&quot;NumDetections&quot;:1,&quot;Optional&quot;:true,&quot;SortOrder&quot;:0,&quot;Value&quot;:&quot;July 1, 2020&quot;},&quot;Card Name&quot;:{&quot;ClassId&quot;:14,&quot;Confidence&quot;:0.07692307692307691,&quot;NumDetectedValues&quot;:13,&quot;NumDetections&quot;:30,&quot;SortOrder&quot;:13,&quot;Values&quot;:[{&quot;Confidence&quot;:0.0818954539536999,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;1fd57edf-7ad2-45e6-bfd2-7f5bc82d32c4&quot;,&quot;f1dff1c7-5749-4099-8985-c623a8e98215&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.012831054627895355,&quot;Left&quot;:0.383637398481369,&quot;Top&quot;:0.39420536160469055,&quot;Width&quot;:0.11415707319974899},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9976721405982971,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Signature&quot;},{&quot;Blocks&quot;:[&quot;775dddb9-2cfe-4ec6-861d-5ba738df48f2&quot;,&quot;c48c3e84-e130-4e4b-a6d7-85032b819b6a&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.012775472365319729,&quot;Left&quot;:0.38383010029792786,&quot;Top&quot;:0.6232449412345886,&quot;Width&quot;:0.11412855982780457},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9976218342781067,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Signature&quot;},{&quot;Blocks&quot;:[&quot;f95a6205-b36b-4c96-b2a8-80d87809346e&quot;,&quot;2cd9633e-e071-4b7f-937b-80679ed023c1&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.012909586541354656,&quot;Left&quot;:0.3835552930831909,&quot;Top&quot;:0.8361994028091431,&quot;Width&quot;:0.11406070739030838},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9975680708885193,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Signature&quot;},{&quot;Blocks&quot;:[&quot;6eaebf62-4386-46a9-b15d-ab657f3814e5&quot;,&quot;bda1e8bf-6199-4f4e-87ae-659a1e107f11&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.01291460171341896,&quot;Left&quot;:0.3842383325099945,&quot;Top&quot;:0.13613104820251465,&quot;Width&quot;:0.11387869715690613},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9975032210350037,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Signature&quot;},{&quot;Blocks&quot;:[&quot;5184a5fe-72c6-421c-9c5d-da6f13ece49a&quot;,&quot;9994b72e-235b-4f83-8008-4d944ac5714e&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.012836689129471779,&quot;Left&quot;:0.22370801866054535,&quot;Top&quot;:0.5118041634559631,&quot;Width&quot;:0.10653972625732422},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9917585849761963,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Signature&quot;},{&quot;Blocks&quot;:[&quot;aee7628b-e90b-4599-a867-59d77d8b274a&quot;,&quot;8a1873d0-d8bd-4040-aba5-80a06e31f52d&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.013290771283209324,&quot;Left&quot;:0.7219780087471008,&quot;Top&quot;:0.824383556842804,&quot;Width&quot;:0.11680322140455246},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9897710084915161,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Signature&quot;},{&quot;Blocks&quot;:[&quot;2b502494-6e76-41a4-8afe-65dfaa564eb1&quot;,&quot;b9bd3ec1-e3a8-4d32-af10-b9c806bd6e3a&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.013149536214768887,&quot;Left&quot;:0.05826728045940399,&quot;Top&quot;:0.12688885629177094,&quot;Width&quot;:0.11370229721069336},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.980606734752655,&quot;PageNum&quot;:5,&quot;Text&quot;:&quot;Visa Signature&quot;}],&quot;Value&quot;:&quot;Visa Signature&quot;},{&quot;Confidence&quot;:0.0818954539536917,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;8917bcd0-81c6-4b4f-b08a-37bbaffbbe73&quot;,&quot;f00de332-c80f-4bd0-ba8b-dfc59a7107e4&quot;,&quot;19e54936-6d58-49fe-81b1-7deede18a32a&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.01061574462801218,&quot;Left&quot;:0.38353830575942993,&quot;Top&quot;:0.22548474371433258,&quot;Width&quot;:0.17601589858531952},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9976031184196472,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Platinum Secured&quot;},{&quot;Blocks&quot;:[&quot;9dc58d81-4eaf-4290-9c72-15196faca88b&quot;,&quot;89dac0a9-4294-408b-b947-e0dfccd16bb8&quot;,&quot;e0acc914-32f6-4e68-8814-dbec74e0ce0a&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010541585274040699,&quot;Left&quot;:0.38380300998687744,&quot;Top&quot;:0.4721176028251648,&quot;Width&quot;:0.17579183727502823},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9977421760559082,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Platinum Secured&quot;},{&quot;Blocks&quot;:[&quot;93e50090-5974-43aa-a8f8-6be3ba939493&quot;,&quot;5bc1fb74-01b8-4eeb-b9ec-a2a0961cb3c4&quot;,&quot;8cb98134-fc7a-48e4-b40e-90e9414481e5&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.011141113005578518,&quot;Left&quot;:0.38352516293525696,&quot;Top&quot;:0.6850060224533081,&quot;Width&quot;:0.1759081333875656},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9975566864013672,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Platinum Secured&quot;},{&quot;Blocks&quot;:[&quot;e2ceb625-2d64-47e5-b23d-ab170dc6a50a&quot;,&quot;bc98880e-9391-41b8-9c42-4ca4e560f4b7&quot;,&quot;2b5f8912-91f4-46eb-9449-97dcc67cf5d4&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.01063048280775547,&quot;Left&quot;:0.38417690992355347,&quot;Top&quot;:0.04915165528655052,&quot;Width&quot;:0.17601891607046127},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.997358500957489,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Platinum Secured&quot;},{&quot;Blocks&quot;:[&quot;9b7563a5-5bb6-44d6-a0cc-305458ca3376&quot;,&quot;831e5b58-41b1-402c-b1a1-dd6d8bcf6edd&quot;,&quot;90cace6b-521f-4d86-ba08-d3b4bd11a31c&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010316350497305393,&quot;Left&quot;:0.1682034581899643,&quot;Top&quot;:0.4047214388847351,&quot;Width&quot;:0.16662805527448654},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9971282482147217,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Platinum Secured&quot;}],&quot;Value&quot;:&quot;Visa Platinum Secured&quot;},{&quot;Confidence&quot;:0.08189545395367087,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;dff2737f-560c-4a12-a98f-e5272ab88b9c&quot;,&quot;034f4abc-9378-4749-a79b-7b7a1bd3c2ea&quot;,&quot;9f5614d6-391c-4495-b096-c09db1e11983&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010616353712975979,&quot;Left&quot;:0.3836177587509155,&quot;Top&quot;:0.3096943199634552,&quot;Width&quot;:0.17984453588724136},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9974504113197327,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Platinum Rewards&quot;},{&quot;Blocks&quot;:[&quot;c193f6dd-0b1f-41c9-85b1-6e37ae8834a6&quot;,&quot;3dd3061b-8b21-444c-bf38-e043c289abb0&quot;,&quot;ac6b74af-fc64-4e89-ab8e-4824e03d3008&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010583736002445221,&quot;Left&quot;:0.3838740587234497,&quot;Top&quot;:0.5474674701690674,&quot;Width&quot;:0.1800505444407463},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.997393012046814,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Platinum Rewards&quot;},{&quot;Blocks&quot;:[&quot;d03b7133-c464-408c-a97e-3509cfd50aa5&quot;,&quot;0a7a0574-6b7d-4b89-8ec2-45d542e836fd&quot;,&quot;7a92caa7-c5cb-409e-83b3-fa571bb6440c&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010452703572809696,&quot;Left&quot;:0.38373446464538574,&quot;Top&quot;:0.7609241604804993,&quot;Width&quot;:0.17956826090812683},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9970704317092896,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;Visa Platinum Rewards&quot;},{&quot;Blocks&quot;:[&quot;39cb1ad0-1233-46d2-ac9b-259ed242ca52&quot;,&quot;7be6f78b-07e2-436f-aebd-564b1f9c9afc&quot;,&quot;e6a98bcb-7676-4091-8c58-57aa880ba14b&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.01055160816758871,&quot;Left&quot;:0.38423579931259155,&quot;Top&quot;:0.09285363554954529,&quot;Width&quot;:0.18002616614103317},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9975242018699646,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Platinum Rewards&quot;},{&quot;Blocks&quot;:[&quot;7ac28dbe-9ec1-468d-8389-8308c7f2ab0a&quot;,&quot;b8a9749a-aa56-4693-8da3-ed958481362f&quot;,&quot;21e1ada8-a95f-40aa-a997-22fd81608829&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010562770068645477,&quot;Left&quot;:0.058347634971141815,&quot;Top&quot;:0.04696829617023468,&quot;Width&quot;:0.1805099919438362},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9926456212997437,&quot;PageNum&quot;:5,&quot;Text&quot;:&quot;Visa Platinum Rewards&quot;}],&quot;Value&quot;:&quot;Visa Platinum Rewards&quot;},{&quot;Confidence&quot;:0.0818947393400434,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;e8b504c5-7c47-4ec3-836d-0c655e9fca59&quot;,&quot;91a44704-0afb-449f-9fbb-0a13647c9003&quot;,&quot;d8da49fa-0c50-47c5-9a3d-df4fd8a3387f&quot;,&quot;143c6192-81a4-4835-a72a-525947467d70&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.011740661226212978,&quot;Left&quot;:0.06186509504914284,&quot;Top&quot;:0.4976089596748352,&quot;Width&quot;:0.23763354495167732},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9970099925994873,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Secured, Visa Platinum Rewards&quot;},{&quot;Blocks&quot;:[&quot;93a4febc-518d-48ad-a4d8-6c2f41e832e6&quot;,&quot;a556a575-a4a5-44a7-95b3-33c39b97f6c3&quot;,&quot;2eb989e1-3698-4bcb-beae-5e9cfc7acb39&quot;,&quot;e0c32b07-5936-4145-ba7b-1d5e3f8573c0&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.011802286840975285,&quot;Left&quot;:0.06175586208701134,&quot;Top&quot;:0.5558368563652039,&quot;Width&quot;:0.23815851286053658},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9970816373825073,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Secured, Visa Platinum Rewards&quot;}],&quot;Value&quot;:&quot;Secured, Visa Platinum Rewards&quot;},{&quot;Confidence&quot;:0.08189464877233418,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;5df990af-9ad1-4bdb-9990-a811ae8e379d&quot;,&quot;f51b75c5-a67d-4595-95e2-5a52f179c46b&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010541544295847416,&quot;Left&quot;:0.22410976886749268,&quot;Top&quot;:0.48301059007644653,&quot;Width&quot;:0.09996364265680313},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9965507388114929,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Platinum&quot;},{&quot;Blocks&quot;:[&quot;8a6d626d-5626-4628-9ecf-2af77426cc61&quot;,&quot;af78370b-e50c-4ee4-9b64-c351071e1f11&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010622111149132252,&quot;Left&quot;:0.26312416791915894,&quot;Top&quot;:0.5411137342453003,&quot;Width&quot;:0.09989502280950546},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9971495866775513,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Platinum&quot;}],&quot;Value&quot;:&quot;Visa Platinum&quot;},{&quot;Confidence&quot;:0.08137111892207782,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;c2c23bbd-352b-4db5-b8a6-db965a8f1280&quot;,&quot;535d7a59-0a1e-4042-94ea-01c4e1043adb&quot;,&quot;f036c9c0-0731-405e-a136-f8b4fd62d975&quot;,&quot;8a1988b5-5f14-4ff0-a5ed-55ad3016765b&quot;,&quot;a7138f34-7a8e-49ae-bfdb-18dbb1f55bd2&quot;,&quot;3ce624bb-2d3f-4d58-9c7e-8f8081768527&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.011695068329572678,&quot;Left&quot;:0.3429241478443146,&quot;Top&quot;:0.2503493130207062,&quot;Width&quot;:0.3483186885714531},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9935975074768066,&quot;PageNum&quot;:3,&quot;Text&quot;:&quot;Visa Platinum Secured, Visa Platinum Rewards:&quot;}],&quot;Value&quot;:&quot;Visa Platinum Secured, Visa Platinum Rewards:&quot;},{&quot;Confidence&quot;:0.08095863513156124,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;1ca0dab3-f08c-4384-a8ff-7ac073a0fba4&quot;,&quot;8e68a3dd-7fb2-4c28-a67e-e9212e42c2d9&quot;,&quot;090174a9-3111-41f3-b69b-829c6ca50ba6&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010565531440079212,&quot;Left&quot;:0.15594275295734406,&quot;Top&quot;:0.20677559077739716,&quot;Width&quot;:0.17013918608427048},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9885607957839966,&quot;PageNum&quot;:3,&quot;Text&quot;:&quot;Visa Platinum Secured:&quot;}],&quot;Value&quot;:&quot;Visa Platinum Secured:&quot;},{&quot;Confidence&quot;:0.08013844151028196,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;da50c53f-7895-40da-b237-726b310e63a3&quot;,&quot;222759ba-1534-4f56-a9db-21352f0d6f45&quot;,&quot;511d312f-d433-4f61-a1b9-3a98356c55f2&quot;,&quot;adde7c4a-bf9c-4dad-a131-5cf3ca6ac907&quot;,&quot;5238fb31-f016-46ff-b736-5e379e56adb8&quot;,&quot;c53ae4dd-abdf-4145-b252-55f3a35d77f0&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.012248290702700615,&quot;Left&quot;:0.29971009492874146,&quot;Top&quot;:0.8243656158447266,&quot;Width&quot;:0.3791096359491348},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9785456657409668,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Platinum Secured, Visa Platinum Rewards&quot;}],&quot;Value&quot;:&quot;Visa Platinum Secured, Visa Platinum Rewards&quot;},{&quot;Confidence&quot;:0.07845114379509668,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;22689b79-ede5-4b95-b6d3-5f69208ef7bd&quot;,&quot;a64c7b2f-5c96-4da4-aa03-812cd09cceed&quot;,&quot;dc41afd9-201c-4888-b43f-ac59f7e95b3a&quot;,&quot;1b7b38a0-940b-4627-981a-2bb32c90e7b3&quot;,&quot;1ea01317-80e7-4380-a03c-33a9e3245761&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.030679178424179554,&quot;Left&quot;:0.5022902488708496,&quot;Top&quot;:0.15226255357265472,&quot;Width&quot;:0.43404360115528107},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.8388195037841797,&quot;PageNum&quot;:1,&quot;Text&quot;:&quot;VISA PLATINUM/VISA PLATINUM REWARDS/VISA\nSIGNATURE&quot;},{&quot;Blocks&quot;:[&quot;72fe445f-c3b7-4e75-8050-97ee63f5f079&quot;,&quot;b76ba16c-de4b-462f-905f-7ca32dc543f3&quot;,&quot;a0d5a171-3b80-4fbb-b257-b233a2b9691d&quot;,&quot;eddbd1ad-a903-4d0e-bfb5-d51a1e9c188e&quot;,&quot;801d7b6b-73ab-4e55-b596-91077a461599&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.02704964019358158,&quot;Left&quot;:0.5109935998916626,&quot;Top&quot;:0.1671990305185318,&quot;Width&quot;:0.42945854365825653},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.7390664219856262,&quot;PageNum&quot;:4,&quot;Text&quot;:&quot;VISA PLATINUM/VISA PLATINUM REWARDS/VISA\nSIGNATURE&quot;}],&quot;Value&quot;:&quot;VISA PLATINUM/VISA PLATINUM REWARDS/VISA\nSIGNATURE&quot;},{&quot;Confidence&quot;:0.07841449532798163,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;0f08e016-7724-467d-a80f-2f8cc427097c&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010372070595622063,&quot;Left&quot;:0.09709496051073074,&quot;Top&quot;:0.882012128829956,&quot;Width&quot;:0.0681237056851387},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9574950933456421,&quot;PageNum&quot;:4,&quot;Text&quot;:&quot;Platinum&quot;}],&quot;Value&quot;:&quot;Platinum&quot;},{&quot;Confidence&quot;:0.07715960289487692,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;3aef0b68-cf8c-422b-8bb8-cbf48b71e838&quot;,&quot;5530da38-644f-4361-886f-4add5a908e36&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.013354462571442127,&quot;Left&quot;:0.34271228313446045,&quot;Top&quot;:0.2931901514530182,&quot;Width&quot;:0.11151082813739777},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.9421719908714294,&quot;PageNum&quot;:3,&quot;Text&quot;:&quot;Visa Signature:&quot;}],&quot;Value&quot;:&quot;Visa Signature:&quot;},{&quot;Confidence&quot;:0.05748819908520977,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;d034392d-cb9e-410e-a633-c765119416ff&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010585937649011612,&quot;Left&quot;:0.2629531919956207,&quot;Top&quot;:0.569959282875061,&quot;Width&quot;:0.03204880282282829},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.7019705772399902,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa&quot;}],&quot;Value&quot;:&quot;Visa&quot;},{&quot;Confidence&quot;:0.05654261335947392,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;4c0cafad-38a6-4797-a087-b7a4cb20a854&quot;,&quot;0e0a0edf-5050-444a-b6b6-247bedde308d&quot;,&quot;5387dba3-ad1a-47c5-b61b-fc24f7b2445a&quot;,&quot;e2942455-138d-4d4c-bd69-0189b6575478&quot;,&quot;56f63f7e-2859-422f-86d9-23574e998202&quot;,&quot;b0c5a0da-7cc0-4ee1-8b4a-23b0dbacf764&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.02738944161683321,&quot;Left&quot;:0.060276344418525696,&quot;Top&quot;:0.4192999005317688,&quot;Width&quot;:0.36531803011894226},&quot;ClassId&quot;:14,&quot;ClassName&quot;:&quot;Card Name&quot;,&quot;Confidence&quot;:0.6904243230819702,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Visa Platinum Rewards,\nNone\nVisa Signature&quot;}],&quot;Value&quot;:&quot;Visa Platinum Rewards,\nNone\nVisa Signature&quot;}]},&quot;Fee - Annual&quot;:{&quot;ClassId&quot;:8,&quot;Confidence&quot;:0.880009856097729,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;dfaa01b8-55d6-4afb-90a6-5386221aeb3c&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010436726734042168,&quot;Left&quot;:0.38491424918174744,&quot;Top&quot;:0.4682910144329071,&quot;Width&quot;:0.04060839116573334},&quot;ClassId&quot;:8,&quot;ClassName&quot;:&quot;Fee - Annual&quot;,&quot;Confidence&quot;:0.5712995529174805,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;None&quot;},{&quot;Blocks&quot;:[&quot;de3711bb-39f7-461c-9213-0a7b02560ce3&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.01048425305634737,&quot;Left&quot;:0.3848537802696228,&quot;Top&quot;:0.5700742602348328,&quot;Width&quot;:0.040784332901239395},&quot;ClassId&quot;:8,&quot;ClassName&quot;:&quot;Fee - Annual&quot;,&quot;Confidence&quot;:0.7201072573661804,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;None&quot;}],&quot;NumDetectedValues&quot;:1,&quot;NumDetections&quot;:2,&quot;Optional&quot;:true,&quot;SortOrder&quot;:8,&quot;Value&quot;:&quot;None&quot;},&quot;Fee - Balance Transfer&quot;:{&quot;ClassId&quot;:9,&quot;Confidence&quot;:0,&quot;Detections&quot;:[],&quot;NumDetectedValues&quot;:0,&quot;NumDetections&quot;:0,&quot;Optional&quot;:true,&quot;SortOrder&quot;:9,&quot;Value&quot;:&quot;&quot;},&quot;Fee - Foreign Transaction&quot;:{&quot;ClassId&quot;:12,&quot;Confidence&quot;:0.9933143258094788,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;073470e9-3e72-4413-86ba-e09d2f8fa6cc&quot;,&quot;a05d7a1a-5b01-4e41-adfb-bf347cc09556&quot;,&quot;5db95960-5496-4daf-bb6d-5b368c9d75ea&quot;,&quot;684cc376-cb8c-4e75-ab32-eb5ccc178142&quot;,&quot;b64e7007-c79f-4771-aca5-ba8228af65ad&quot;,&quot;0ae24474-57b2-47a8-8ea5-da55b2e415dc&quot;,&quot;175d9b66-3f39-4b47-923b-4b04db7f4cbe&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010942058637738228,&quot;Left&quot;:0.384962260723114,&quot;Top&quot;:0.5409907102584839,&quot;Width&quot;:0.29446231201291084},&quot;ClassId&quot;:12,&quot;ClassName&quot;:&quot;Fee - Foreign Transaction&quot;,&quot;Confidence&quot;:0.9933143258094788,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;1.00% of each transaction in U.S. dollars&quot;}],&quot;NumDetectedValues&quot;:1,&quot;NumDetections&quot;:1,&quot;Optional&quot;:true,&quot;SortOrder&quot;:12,&quot;Value&quot;:&quot;1.00% of each transaction in U.S. dollars&quot;},&quot;Fee - Late Payment&quot;:{&quot;ClassId&quot;:10,&quot;Confidence&quot;:0.2806296534153191,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;8be393dc-865a-4364-8938-c59e3affdcb2&quot;,&quot;b0c4d99e-c37d-4347-a1c9-4d191b2dcb04&quot;,&quot;ae9039a3-42cb-4286-9c93-21b56a5ca76d&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.013096571899950504,&quot;Left&quot;:0.3850840628147125,&quot;Top&quot;:0.6175328493118286,&quot;Width&quot;:0.09347331151366234},&quot;ClassId&quot;:10,&quot;ClassName&quot;:&quot;Fee - Late Payment&quot;,&quot;Confidence&quot;:0.959344744682312,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Up to $25.00&quot;}],&quot;NumDetectedValues&quot;:4,&quot;NumDetections&quot;:5,&quot;Optional&quot;:true,&quot;SortOrder&quot;:10,&quot;Value&quot;:&quot;Up to $25.00&quot;},&quot;Fee - Returned Payment&quot;:{&quot;ClassId&quot;:11,&quot;Confidence&quot;:0.14508413209384544,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;90e528ee-c9ed-4432-8b7b-ac10e83314d4&quot;,&quot;4d0c5b1b-effb-4089-84ac-fb1553003b9d&quot;,&quot;b94f61b3-f6c3-4fc4-b3eb-ffa9ffc77236&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.013004827313125134,&quot;Left&quot;:0.38502928614616394,&quot;Top&quot;:0.6469276547431946,&quot;Width&quot;:0.09341846778988838},&quot;ClassId&quot;:11,&quot;ClassName&quot;:&quot;Fee - Returned Payment&quot;,&quot;Confidence&quot;:0.9889686703681946,&quot;PageNum&quot;:2,&quot;Text&quot;:&quot;Up to $25.00&quot;}],&quot;NumDetectedValues&quot;:9,&quot;NumDetections&quot;:11,&quot;Optional&quot;:true,&quot;SortOrder&quot;:11,&quot;Value&quot;:&quot;Up to $25.00&quot;},&quot;Provider Address&quot;:{&quot;ClassId&quot;:15,&quot;Confidence&quot;:0.1866029195608454,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;4cddae38-8ce6-417e-9e35-84ce7ea76349&quot;,&quot;16c9b8ff-2eb7-4808-99ee-d0614e4790ae&quot;,&quot;9d7e7c01-0426-440c-bab9-562db9eaa549&quot;,&quot;61d91aec-3333-40b7-bc40-51cc01df1ae2&quot;,&quot;af98066d-595d-4060-b171-19ffc6e68b18&quot;,&quot;31dd2b5a-a3d8-4241-ab01-e0bc891cf5a2&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.02645825408399105,&quot;Left&quot;:0.058534175157547,&quot;Top&quot;:0.41835135221481323,&quot;Width&quot;:0.8812236487865448},&quot;ClassId&quot;:15,&quot;ClassName&quot;:&quot;Provider Address&quot;,&quot;Confidence&quot;:0.9956236481666565,&quot;PageNum&quot;:6,&quot;Text&quot;:&quot;P.O. Box 40769,\nJacksonville, FL, 32203&quot;}],&quot;NumDetectedValues&quot;:6,&quot;NumDetections&quot;:6,&quot;Optional&quot;:true,&quot;SortOrder&quot;:14,&quot;Value&quot;:&quot;P.O. Box 40769,\nJacksonville, FL, 32203&quot;},&quot;Provider Name&quot;:{&quot;ClassId&quot;:16,&quot;Confidence&quot;:0.13394671408363762,&quot;Detections&quot;:[{&quot;Blocks&quot;:[&quot;7da44311-ec68-4b75-b1d7-a3a252bef8c0&quot;,&quot;821efa21-e595-4df9-a771-d792d2611cd2&quot;,&quot;08e19245-706a-470f-8061-95126b709f38&quot;,&quot;5beefd29-5392-47bd-9f3c-0d907af0dcec&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.010401730425655842,&quot;Left&quot;:0.2307714968919754,&quot;Top&quot;:0.2586304843425751,&quot;Width&quot;:0.19084085524082184},&quot;ClassId&quot;:16,&quot;ClassName&quot;:&quot;Provider Name&quot;,&quot;Confidence&quot;:0.9733462929725647,&quot;PageNum&quot;:4,&quot;Text&quot;:&quot;121 Financial Credit Union&quot;},{&quot;Blocks&quot;:[&quot;8938afcd-5134-41b4-be68-f281fff8d548&quot;,&quot;b5c969a5-721d-48f6-9da0-b5dc73b79262&quot;,&quot;3f059905-99d4-42ad-81a2-cedd9e6f8609&quot;,&quot;a950fe75-3f10-41a2-b521-64a0559bf01c&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.008531839586794376,&quot;Left&quot;:0.36297914385795593,&quot;Top&quot;:0.2877078354358673,&quot;Width&quot;:0.15514950826764107},&quot;ClassId&quot;:16,&quot;ClassName&quot;:&quot;Provider Name&quot;,&quot;Confidence&quot;:0.9975368976593018,&quot;PageNum&quot;:12,&quot;Text&quot;:&quot;121 Financial Credit Union&quot;},{&quot;Blocks&quot;:[&quot;b26dcff2-fa62-41a2-81f1-947d5320cb49&quot;,&quot;0001fcda-2257-4add-b911-1016565c9e47&quot;,&quot;c8c18f51-eb8e-48d8-9ef2-dcf75f23ef25&quot;,&quot;8e9328b2-70bc-45c8-856b-1186eccfcca8&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.008441426791250706,&quot;Left&quot;:0.6746349334716797,&quot;Top&quot;:0.2980751395225525,&quot;Width&quot;:0.15590668469667435},&quot;ClassId&quot;:16,&quot;ClassName&quot;:&quot;Provider Name&quot;,&quot;Confidence&quot;:0.9970521926879883,&quot;PageNum&quot;:12,&quot;Text&quot;:&quot;121 Financial Credit Union&quot;},{&quot;Blocks&quot;:[&quot;2f9e4907-bc39-45e6-923c-04a75bc7cde5&quot;,&quot;82a23668-27b0-47a2-a301-0b173908d288&quot;,&quot;e9b26ee8-e658-417a-8533-f436d73263f3&quot;,&quot;98551e94-db31-4606-bb5a-987bef437121&quot;],&quot;BoundingBox&quot;:{&quot;Height&quot;:0.008487778715789318,&quot;Left&quot;:0.7627140879631042,&quot;Top&quot;:0.31889647245407104,&quot;Width&quot;:0.15369189530611038},&quot;ClassId&quot;:16,&quot;ClassName&quot;:&quot;Provider Name&quot;,&quot;Confidence&quot;:0.9970863461494446,&quot;PageNum&quot;:12,&quot;Text&quot;:&quot;121 Financial Credit Union&quot;}],&quot;NumDetectedValues&quot;:8,&quot;NumDetections&quot;:11,&quot;SortOrder&quot;:15,&quot;Value&quot;:&quot;121 Financial Credit Union&quot;}}},&quot;TaskObject&quot;:&quot;s3://sagemaker-ap-southeast-1-123456789012/textract-transformers/data/raw/121 Financial Credit Union/Visa Applicaton and Solicitation Disclosure.pdf&quot;}",
+  };
+  // Parse the complex string provided by Liquid template into native JS object:
+  try {
+    window.taskData.taskInput = JSON.parse(
+      (
+        // First need to parse the HTML escape sequences:
+        new DOMParser()
+          .parseFromString(window.taskData.taskInput, "text/html")
+          .documentElement
+          .textContent || ""
+      ).replace(
+        // This could leave some newlines which JSON doesn't like and we don't need to preserve:
+        /\r?\n/gm,
+        " "
+      )
+    );
+  } catch (err) {
+    console.error("Failed to parse input data object from Liquid", err.stack);
+  }
+</script>
+
+<crowd-form style="width: 100%; height: 100%;">
+
+  <div class="container-fluid" style="height: 100%; overflow: hidden;">
+    <div class="row" style="height: 100%; overflow: auto;">
+      <div class="col-xs-8 col-lg-8 col-xl-6 col-taskobject">
+        <div style="position: relative; overflow: hidden; height: 100%; width: 100%;">
+          <custom-viewer
+            src="/example.pdf"
+            style="display: block; height: 100%; width: 100%;"
+          ></custom-viewer>
+        </div>
+      </div>
+      <div class="col-xs-4 col-lg-4 col-xl-6 col-fields">
+        <h4>Extracted Fields</h4>
+        <object-value-input name="store"></object-value-input>
+        <input type="text" name="tmp-testtext-outer" value="test input outside components"/>
+        <crowd-checkbox
+          name="tmp-testbox-outer"
+          style="flex: 0 0 auto; padding-top: 16px;"
+          value="checked"
+          checked>
+        </crowd-checkbox>
+            <custom-field
+              name="testfield-notdetected"
+              value=""
+              confidence="0.4"
+              optional="0"
+              class-id="7"></custom-field>
+            <custom-field
+              name="testfield-notdetected-optional"
+              value=""
+              confidence="0.3"
+              optional="1"></custom-field>
+            <custom-field
+              name="testfield-single"
+              value="A value"
+              confidence="0.9"
+              class-id="17"
+            >
+              <div class="field-detections">
+                <p>Detected at:</p>
+                <ul>
+                    <li>
+                      (90% Confidence): Page 1,
+                      X=0.5,
+                      Y=0.5
+                    </li>
+                </ul>
+              </div>
+            </custom-field>
+            <!-- Multi-Value Field -->
+            <custom-field-multivalue
+              name="testfield-multi"
+              confidence="0.7"
+              class-id="3"
+            >
+              <custom-multifield-value
+                name="testfield-multi"
+                index="0"
+                value="dogs"
+              ></custom-multifield-value>
+              <custom-multifield-value
+                name="testfield-multi"
+                index="1"
+                value="cats"
+              ></custom-multifield-value>
+            </custom-field-multivalue>
+            <custom-field-multivalue
+              name="testfield-multi-novalues-optional"
+              confidence="0"
+              optional="1"
+              class-id="4"
+            >
+              <!-- Check the component can automatically insert a placeholder if none provided -->
+            </custom-field-multivalue>
+            <custom-field-multivalue
+              name="testfield-multi-novalues-nonopt"
+              confidence="0"
+              class-id="5"
+            >
+              <custom-multifield-value
+                name="testfield-multi-novalues-nonopt"
+                index="0"
+                value=""
+              ></custom-multifield-value>
+            </custom-field-multivalue>
+      </div>
+    </div>
+  </div>
+
+  <short-instructions>
+    <p>
+      Review the input document and amend the auto-extracted values for each field, then click
+      Submit.
+    </p>
+    <p>For more guidance view the full instructions.</p>
+    <div id="app"></div>
+  </short-instructions>
+
+  <full-instructions header="SmartOCR Review">
+    <p>
+      All fields are required unless you explicitly un-tick the checkbox to indicate that field
+      isn't in the document.
+    </p>
+    <p>
+      <em>Note:</em> We could programmatically pull through per-field guidance to here as we did in
+      the custom SMGT template. However, in practice the guidance would probably be a little
+      different for online review... So we haven't in this example.
+    </p>
+  </full-instructions>
+</crowd-form>
+<script type="module" src="/src/main.ts"></script>

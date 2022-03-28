@@ -4,7 +4,6 @@
 
 # AWS CDK stuff
 *.swp
-package-lock.json
 .cdk.staging
 cdk.out
 
@@ -127,3 +126,6 @@ dmypy.json
 
 # Operating Systems
 .DS_Store
+
+# NodeJS
+**/node_modules/**
