@@ -1,6 +1,6 @@
 # Custom Document Review UI for Amazon A2I with VueJS
 
-> *"Wow, this folder looks complicated - what's going on?"* - Anonymous Developer
+> _"Wow, this folder looks complicated - what's going on?" - Anonymous Developer_
 
 Don't panic! You're free to just consume the final template as-is for the sample demo. However:
 
