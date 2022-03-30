@@ -18,17 +18,34 @@ export interface Detection {
 }
 
 /**
- * Overall detection result for a given entity/field type.
+ * Common interface for single- or multi-value entity/field results.
  */
-export interface ModelResultField {
+interface ModelResultFieldBase {
   ClassId: number;
   Confidence: number;
-  Detections: Detection[];
   NumDetectedValues: number;
   NumDetections: number;
   Optional?: boolean;
   SortOrder: number;
+}
+
+/**
+ * Overall detection result for a given entity/field type.
+ */
+export interface ModelResultSingleField extends ModelResultFieldBase {
+  Detections: Detection[];
   Value: string;
+}
+
+/**
+ * Overall detection result for a given entity/field type.
+ */
+export interface ModelResultMultiField extends ModelResultFieldBase {
+  Values: Array<{
+    Confidence: number;
+    Detections: Detection[];
+    Value: string;
+  }>;
 }
 
 /**
@@ -37,6 +54,6 @@ export interface ModelResultField {
 export interface ModelResult {
   Confidence: number;
   Fields: {
-    [FieldName: string]: ModelResultField;
+    [FieldName: string]: ModelResultSingleField | ModelResultMultiField;
   };
 }

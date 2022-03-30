@@ -18,7 +18,12 @@ import { onBeforeUnmount, onMounted, ref } from "vue";
 
 // Local Dependencies:
 import type { AnnotationLayerElement } from "./PdfPageAnnotationLayer.ce.vue";
-import type { Detection, ModelResult } from "../util/model";
+import type {
+  Detection,
+  ModelResult,
+  ModelResultMultiField,
+  ModelResultSingleField,
+} from "../util/model";
 import { addValidateHandler } from "../util/store";
 
 // Need to explicitly set this for PDFJS to find it:
@@ -69,8 +74,17 @@ onMounted(() => {
   const rawData = window.taskData.taskInput as { ModelResult: ModelResult };
   const rawFields = rawData.ModelResult.Fields;
   Object.keys(rawFields).forEach((fieldName) => {
-    const fieldDets = rawFields[fieldName].Detections;
-    if (!fieldDets) return;
+    // Check single-value field case first:
+    let fieldDets = (rawFields[fieldName] as ModelResultSingleField).Detections;
+    if (!fieldDets) {
+      // Try to retrieve multi-value field detections:
+      const fieldMultiValues = (rawFields[fieldName] as ModelResultMultiField).Values;
+      // (This will fail to [] if .Values doesn't exist either)
+      fieldDets = Array.prototype.concat.apply(
+        [],
+        fieldMultiValues?.map((v) => v.Detections) || []
+      );
+    }
     fieldDets.forEach((det: Detection) => {
       if (typeof det.PageNum !== "number") {
         console.error("Detection has non-numeric PageNum: Skipping to avoid infinite loop", det);
