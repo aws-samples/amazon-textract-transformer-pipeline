@@ -11,6 +11,9 @@ import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import vue from "@vitejs/plugin-vue";
 
+// Local Dependencies:
+import { viteNoModule } from "./tools/vite-plugin-nomodule";
+
 // See reference at https://vitejs.dev/config/
 export default defineConfig({
   build: {
@@ -54,6 +57,8 @@ export default defineConfig({
     }),
     // Package all outputs together so we don't have to find a way to host many JS/CSS/etc assets:
     viteSingleFile(),
+    // Sub script tag `type="module"` to `defer` for CORS handling in SMGT/A2I:
+    viteNoModule(),
   ],
   resolve: {
     alias: {

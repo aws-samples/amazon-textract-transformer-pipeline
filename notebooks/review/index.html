@@ -1,183 +1,189 @@
 <!-- Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
   SPDX-License-Identifier: MIT-0 -->
 <!-- Main A2I template entry point -->
-<script
-  src="https://cdn.jsdelivr.net/npm/element-internals-polyfill@1.1.2"
-  integrity="sha384-K1G02YJ7ONOXGAFQFaugMhB2to6REBuR2jp6E34Q+XQ5WetpA/yqZ+5vA+xbxnSf"
-  crossorigin="anonymous"
-></script>
-<link
-  rel="stylesheet"
-  href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
-  integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
-  crossorigin="anonymous">
-<link
-  rel="stylesheet"
-  href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.3.0/font/bootstrap-icons.css"
-  integrity="sha384-YdM/o2MTG+kIKs1sV/gSEWXZo5d1DdBeuo/6s8qMJd5I5FKkStdHSXeNukljrWUZ"
-  crossorigin="anonymous">
-<script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
-<script
-  src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js"
-  integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW"
-  crossorigin="anonymous"
-></script>
+<!DOCTYPE html>
+<html>
+  <head>
+    <script
+      src="https://cdn.jsdelivr.net/npm/element-internals-polyfill@1.1.2"
+      integrity="sha384-K1G02YJ7ONOXGAFQFaugMhB2to6REBuR2jp6E34Q+XQ5WetpA/yqZ+5vA+xbxnSf"
+      crossorigin="anonymous"
+    ></script>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/css/bootstrap.min.css"
+      integrity="sha384-giJF6kkoqNQ00vy+HMDP7azOuL0xtbfIcaT9wjKHr8RbDVddVHyTfAAsrekwKmP1"
+      crossorigin="anonymous">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.3.0/font/bootstrap-icons.css"
+      integrity="sha384-YdM/o2MTG+kIKs1sV/gSEWXZo5d1DdBeuo/6s8qMJd5I5FKkStdHSXeNukljrWUZ"
+      crossorigin="anonymous">
+    <script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.0-beta1/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-ygbV9kiqUc6oa4msXn9868pTtWMgiQaeYH7/t7LECLbyPA2x65Kgf80OJFdroafW"
+      crossorigin="anonymous"
+    ></script>
 
-<script
-    src="https://cdn.jsdelivr.net/npm/amazon-textract-response-parser@0.1.2"
-    integrity="sha384-YC8g6Lps/fXgj+LHlcBWVNJ/CMeN4hdn2Jdur6WvIu3Dj+fH4ForvNTlFpOAf14p"
-    crossorigin="anonymous"
-></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/amazon-textract-response-parser@0.1.2"
+        integrity="sha384-YC8g6Lps/fXgj+LHlcBWVNJ/CMeN4hdn2Jdur6WvIu3Dj+fH4ForvNTlFpOAf14p"
+        crossorigin="anonymous"
+    ></script>
 
-<!--
-  While many modern browsers support native PDF rendering (see https://pdfobject.com/static/), the
-  iframe within which SMGT/A2I task UIs run is sandboxed; and different browsers take different
-  decisions on whether their built-in PDF rendering plugins should be allowed in these contexts.
+    <!--
+      While many modern browsers support native PDF rendering (see https://pdfobject.com/static/), the
+      iframe within which SMGT/A2I task UIs run is sandboxed; and different browsers take different
+      decisions on whether their built-in PDF rendering plugins should be allowed in these contexts.
 
-  So for broader browser support, we'll use directly use the Mozilla PDF.js libraries which many of
-  these browser implementations are built on anyway:
--->
-<script
-  src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/build/pdf.js"
-  integrity="sha384-sl/fkMcwR9TnDJg4Gmk12e9FfPA+VqSPn8xZ3fdj9gU+h8q1x1sbGpvKdUWtQ+UZ"
-  crossorigin="anonymous"
-></script>
-<script
-  src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/build/pdf.worker.js"
-  integrity="sha384-+/07xVmDoU9mF+4G57uKjgspJIDhW/d8pqp4qAFOR+AXbLp75k5djMpbz99sxEQc"
-  crossorigin="anonymous"
-></script>
-<link
-  rel="stylesheet"
-  href="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/web/pdf_viewer.css"
-  integrity="sha384-uLLDnQwn/dRYKmVlO9CjCPVXJCB8KbmxVH63cmOVqY/f5kYTyKAhXUDy+8ZmkPru"
-  crossorigin="anonymous">
-<script
-  src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/web/pdf_viewer.js"
-  integrity="sha384-tobFa454L+w29PR7fdTZD8WyBNgQoPfofsZTkjd/+ezZmsW2YjYJ4ds2SQfrBbo3"
-  crossorigin="anonymous"
-></script>
+      So for broader browser support, we'll use directly use the Mozilla PDF.js libraries which many of
+      these browser implementations are built on anyway:
+    -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/build/pdf.js"
+      integrity="sha384-sl/fkMcwR9TnDJg4Gmk12e9FfPA+VqSPn8xZ3fdj9gU+h8q1x1sbGpvKdUWtQ+UZ"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/build/pdf.worker.js"
+      integrity="sha384-+/07xVmDoU9mF+4G57uKjgspJIDhW/d8pqp4qAFOR+AXbLp75k5djMpbz99sxEQc"
+      crossorigin="anonymous"
+    ></script>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/web/pdf_viewer.css"
+      integrity="sha384-uLLDnQwn/dRYKmVlO9CjCPVXJCB8KbmxVH63cmOVqY/f5kYTyKAhXUDy+8ZmkPru"
+      crossorigin="anonymous">
+    <script
+      src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.13.216/legacy/web/pdf_viewer.js"
+      integrity="sha384-tobFa454L+w29PR7fdTZD8WyBNgQoPfofsZTkjd/+ezZmsW2YjYJ4ds2SQfrBbo3"
+      crossorigin="anonymous"
+    ></script>
 
-<script>
-  window.taskData = {
-    taskObject: "{{ task.input.TaskObject | grant_read_access }}",
-    taskInput: "{{ task.input }}",
-  };
-  // Parse the complex string provided by Liquid template into native JS object:
-  try {
-    window.taskData.taskInput = JSON.parse(
-      (
-        // First need to parse the HTML escape sequences:
-        new DOMParser()
-          .parseFromString(window.taskData.taskInput, "text/html")
-          .documentElement
-          .textContent || ""
-      ).replace(
-        // This could leave some newlines which JSON doesn't like and we don't need to preserve:
-        /\r?\n/gm,
-        " "
-      )
-    );
-  } catch (err) {
-    console.error("Failed to parse input data object from Liquid", err.stack);
-  }
-</script>
+    <script>
+      window.taskData = {
+        taskObject: "{{ task.input.TaskObject | grant_read_access }}",
+        taskInput: "{{ task.input }}",
+      };
+      // Parse the complex string provided by Liquid template into native JS object:
+      try {
+        window.taskData.taskInput = JSON.parse(
+          (
+            // First need to parse the HTML escape sequences:
+            new DOMParser()
+              .parseFromString(window.taskData.taskInput, "text/html")
+              .documentElement
+              .textContent || ""
+          ).replace(
+            // This could leave some newlines which JSON doesn't like and we don't need to preserve:
+            /\r?\n/gm,
+            " "
+          )
+        );
+      } catch (err) {
+        console.error("Failed to parse input data object from Liquid", err.stack);
+      }
+    </script>
+  </head>
+  <body>
+    <crowd-form style="width: 100%; height: 100%;">
 
-<crowd-form style="width: 100%; height: 100%;">
-
-  <div class="container-fluid" style="height: 100%; overflow: hidden;">
-    <div class="row" style="height: 100%;">
-      <div class="col-xs-8 col-lg-8 col-xl-6 col-taskobject">
-        <div style="position: relative; overflow: hidden; height: 100%; width: 100%;">
-          <custom-viewer
-            src="{{ task.input.TaskObject | grant_read_access }}"
-            style="display: block; height: 100%; width: 100%;"
-          ></custom-viewer>
+      <div class="container-fluid" style="height: 100%; overflow: hidden;">
+        <div class="row" style="height: 100%;">
+          <div class="col-xs-8 col-lg-8 col-xl-6 col-taskobject">
+            <div style="position: relative; overflow: hidden; height: 100%; width: 100%;">
+              <custom-viewer
+                src="{{ task.input.TaskObject | grant_read_access }}"
+                style="display: block; height: 100%; width: 100%;"
+              ></custom-viewer>
+            </div>
+          </div>
+          <div class="col-xs-4 col-lg-4 col-xl-6 col-fields">
+            <h4>Extracted Fields</h4>
+            <object-value-input name="store"></object-value-input>
+            {% for fieldkv in task.input.ModelResult.Fields %}
+              {% if fieldkv[1].Value %}
+                <!-- Single-Valued Field (all values in Liquid are truthy except nil & false) -->
+                {% assign field_value_len = fieldkv[1].Value | size %}
+                <custom-field
+                  name="{{ fieldkv[0] }}"
+                  value="{{ fieldkv[1].Value }}"
+                  confidence="{{ fieldkv[1].Confidence }}"
+                  optional="{% if fieldkv[1].Optional %}1{% else %}0{% endif %}"
+                  class-id="{{ fieldkv[1].ClassId }}"
+                >
+                  {% if fieldkv[1].Detections and fieldkv[1].Detections[0] %}
+                  <div class="field-detections">
+                    <p>Detected at:</p>
+                    <ul>
+                      {% for det in fieldkv[1].Detections %}
+                        <li>
+                          ({{det.Confidence | times: 100 | round: 1 }}% Confidence): Page {{det.PageNum}},
+                          X={{det.BoundingBox.Width | divided_by: 2 | plus: det.BoundingBox.Left | round: 4}},
+                          Y={{det.BoundingBox.Height | divided_by: 2 | plus: det.BoundingBox.Top | round: 4}}
+                        </li>
+                      {% endfor %}
+                    </ul>
+                  </div>
+                  {% endif %}
+                </custom-field>
+              {% else %}
+                <!-- Multi-Value Field -->
+                {% assign field_value_len = fieldkv[1].Values | size %}
+                <custom-field-multivalue
+                  name="{{ fieldkv[0] }}"
+                  confidence="{{ fieldkv[1].Confidence }}"
+                  optional="{% if fieldkv[1].Optional %}1{% else %}0{% endif %}"
+                  class-id="{{ fieldkv[1].ClassId }}"
+                >
+                  {% assign ix_value = -1 %}
+                  {% for fieldvalue in fieldkv[1].Values %}
+                    <custom-multifield-value
+                      name="{{ fieldkv[0] }}"
+                      index="{% increment ix_value %}"
+                      value="{{ fieldvalue.Value }}"
+                    >
+                    </custom-multifield-value>
+                  {% else %}
+                  {% comment %} Must have at least one slot present for the add/remove logics to work {% endcomment %}
+                    <custom-multifield-value
+                      name="{{ fieldkv[0] }}"
+                      index="0"
+                      value=""
+                    >
+                    </custom-multifield-value>
+                  {% endfor %}
+                </custom-field-multivalue>
+              {% endif %}
+            {% else %}
+              <div>No fields available!</div>
+            {% endfor %}
+          </div>
         </div>
       </div>
-      <div class="col-xs-4 col-lg-4 col-xl-6 col-fields">
-        <h4>Extracted Fields</h4>
-        <object-value-input name="store"></object-value-input>
-        {% for fieldkv in task.input.ModelResult.Fields %}
-          {% if fieldkv[1].Value %}
-            <!-- Single-Valued Field (all values in Liquid are truthy except nil & false) -->
-            {% assign field_value_len = fieldkv[1].Value | size %}
-            <custom-field
-              name="{{ fieldkv[0] }}"
-              value="{{ fieldkv[1].Value }}"
-              confidence="{{ fieldkv[1].Confidence }}"
-              optional="{% if fieldkv[1].Optional %}1{% else %}0{% endif %}"
-              class-id="{{ fieldkv[1].ClassId }}"
-            >
-              {% if fieldkv[1].Detections and fieldkv[1].Detections[0] %}
-              <div class="field-detections">
-                <p>Detected at:</p>
-                <ul>
-                  {% for det in fieldkv[1].Detections %}
-                    <li>
-                      ({{det.Confidence | times: 100 | round: 1 }}% Confidence): Page {{det.PageNum}},
-                      X={{det.BoundingBox.Width | divided_by: 2 | plus: det.BoundingBox.Left | round: 4}},
-                      Y={{det.BoundingBox.Height | divided_by: 2 | plus: det.BoundingBox.Top | round: 4}}
-                    </li>
-                  {% endfor %}
-                </ul>
-              </div>
-              {% endif %}
-            </custom-field>
-          {% else %}
-            <!-- Multi-Value Field -->
-            {% assign field_value_len = fieldkv[1].Values | size %}
-            <custom-field-multivalue
-              name="{{ fieldkv[0] }}"
-              confidence="{{ fieldkv[1].Confidence }}"
-              optional="{% if fieldkv[1].Optional %}1{% else %}0{% endif %}"
-              class-id="{{ fieldkv[1].ClassId }}"
-            >
-              {% assign ix_value = -1 %}
-              {% for fieldvalue in fieldkv[1].Values %}
-                <custom-multifield-value
-                  name="{{ fieldkv[0] }}"
-                  index="{% increment ix_value %}"
-                  value="{{ fieldvalue.Value }}"
-                >
-                </custom-multifield-value>
-              {% else %}
-              {% comment %} Must have at least one slot present for the add/remove logics to work {% endcomment %}
-                <custom-multifield-value
-                  name="{{ fieldkv[0] }}"
-                  index="0"
-                  value=""
-                >
-                </custom-multifield-value>
-              {% endfor %}
-            </custom-field-multivalue>
-          {% endif %}
-        {% else %}
-          <div>No fields available!</div>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-
-  <short-instructions>
-    <p>
-      Review the input document and amend the auto-extracted values for each field, then click
-      Submit.
-    </p>
-    <p>For more guidance view the full instructions.</p>
-    <div id="app"></div>
-  </short-instructions>
-
-  <full-instructions header="SmartOCR Review">
-    <p>
-      All fields are required unless you explicitly un-tick the checkbox to indicate that field
-      isn't in the document.
-    </p>
-    <p>
-      <em>Note:</em> We could programmatically pull through per-field guidance to here as we did in
-      the custom SMGT template. However, in practice the guidance would probably be a little
-      different for online review... So we haven't in this example.
-    </p>
-  </full-instructions>
-</crowd-form>
-<script type="module" src="/src/main.ts"></script>
+    
+      <short-instructions>
+        <p>
+          Review the input document and amend the auto-extracted values for each field, then click
+          Submit.
+        </p>
+        <p>For more guidance view the full instructions.</p>
+        <div id="app"></div>
+      </short-instructions>
+    
+      <full-instructions header="SmartOCR Review">
+        <p>
+          All fields are required unless you explicitly un-tick the checkbox to indicate that field
+          isn't in the document.
+        </p>
+        <p>
+          <em>Note:</em> We could programmatically pull through per-field guidance to here as we did in
+          the custom SMGT template. However, in practice the guidance would probably be a little
+          different for online review... So we haven't in this example.
+        </p>
+      </full-instructions>
+    </crowd-form>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
