@@ -1,0 +1,45 @@
+{
+  "name": "amazon-a2i-pdf-field-review-ui",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Document field detection review UI for Amazon Augmented AI (A2I)",
+  "author": "Amazon Web Services",
+  "license": "MIT-0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aws-samples/amazon-textract-transformer-pipeline.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aws-samples/amazon-textract-transformer-pipeline/issues"
+  },
+  "homepage": "https://github.com/aws-samples/amazon-textract-transformer-pipeline#readme",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --port 5050",
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore"
+  },
+  "dependencies": {
+    "amazon-textract-response-parser": "0.1.2",
+    "element-internals-polyfill": "1.1.2",
+    "pdfjs-dist": "2.13.216",
+    "vue": "^3.2.29"
+  },
+  "devDependencies": {
+    "@rushstack/eslint-patch": "^1.1.0",
+    "@types/node": "^16.11.22",
+    "@vitejs/plugin-vue": "^2.1.0",
+    "@vue/eslint-config-prettier": "^7.0.0",
+    "@vue/eslint-config-typescript": "^10.0.0",
+    "@vue/tsconfig": "^0.1.3",
+    "eslint": "^8.5.0",
+    "eslint-plugin-vue": "^8.2.0",
+    "prettier": "^2.5.1",
+    "sass": "^1.49.7",
+    "typescript": "~4.5.5",
+    "vite": "^2.7.13",
+    "vite-plugin-singlefile": "^0.6.3",
+    "vue-tsc": "^0.31.1"
+  }
+}

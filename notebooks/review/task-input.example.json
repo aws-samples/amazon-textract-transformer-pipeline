@@ -1,59 +1,194 @@
 {
-  "TaskObject": "s3://pipelinestack-pipelineinputbucket12345678-123456789abc/Visa Credit Card Agreement and Disclosure.pdf",
+  "TaskObject": "s3://pipelinestack-pipelineinputbucket12345678-123456789abc/121/Visa Credit Card Agreement and Disclosure.pdf",
   "ModelResult": {
-    "Confidence": 0.9,
+    "Confidence": 0.07692307692307691,
     "Fields": {
       "Agreement Effective Date": {
         "ClassId": 0,
-        "Confidence": 0,
-        "NumDetections": 0,
-        "Optional": true,
+        "Confidence": 0.5148966312408447,
+        "NumDetections": 1,
+        "NumDetectedValues": 1,
         "SortOrder": 0,
-        "Value": "",
-        "Detections": []
+        "Optional": true,
+        "Value": "July 1, 2020",
+        "Detections": [
+          {
+            "ClassId": 0,
+            "ClassName": "Agreement Effective Date",
+            "Confidence": 0.5148966312408447,
+            "Blocks": [
+              "ba908af8-3036-4c4b-9032-c862a1b41f34",
+              "7b522d93-d522-4912-9bab-2731311f3f27",
+              "bcf10aa6-25ea-4dfe-b3a9-4c5a4314db64"
+            ],
+            "BoundingBox": {
+              "Top": 0.7815122008323669,
+              "Left": 0.7078675031661987,
+              "Height": 0.012554199434816837,
+              "Width": 0.08861665800213814
+            },
+            "PageNum": 2,
+            "Text": "July 1, 2020"
+          }
+        ]
       },
       "APR - Introductory": {
         "ClassId": 1,
-        "Confidence": 0,
-        "NumDetections": 0,
-        "Optional": true,
+        "Confidence": 0.3351292363751003,
+        "NumDetections": 4,
+        "NumDetectedValues": 4,
         "SortOrder": 1,
-        "Value": "",
-        "Detections": []
+        "Optional": true,
+        "Value": "when you",
+        "Detections": [
+          {
+            "ClassId": 1,
+            "ClassName": "APR - Introductory",
+            "Confidence": 0.5425662994384766,
+            "Blocks": [
+              "8eb1b515-afc9-4ca9-b00b-73ff31f8836c",
+              "e5109633-5d3f-4b74-8d19-19a263ba9f5b"
+            ],
+            "BoundingBox": {
+              "Top": 0.5625559091567993,
+              "Left": 0.7392318844795227,
+              "Height": 0.012184686958789825,
+              "Width": 0.07066696137189865
+            },
+            "PageNum": 1,
+            "Text": "when you"
+          }
+        ]
       },
       "APR - Balance Transfers": {
         "ClassId": 2,
-        "Confidence": 0,
-        "NumDetections": 0,
-        "Optional": true,
+        "Confidence": 0.6571257710456848,
+        "NumDetections": 1,
+        "NumDetectedValues": 1,
         "SortOrder": 2,
-        "Value": "",
-        "Detections": []
+        "Optional": true,
+        "Value": "9.74% , 10.74%, 11.74%, 14.74% or 16.74%,",
+        "Detections": [
+          {
+            "ClassId": 2,
+            "ClassName": "APR - Balance Transfers",
+            "Confidence": 0.6571257710456848,
+            "Blocks": [
+              "32e06f01-edf8-49ee-9d34-62b7601c8485",
+              "92be658e-4bbf-4cbc-a6a1-9facacdc5450",
+              "8ee460f7-3f82-4be2-981f-a5a90fb72948",
+              "be336f5b-ec2b-4c9f-9a98-e9052a440625",
+              "721655e9-3aa5-4ee0-8b9f-e9e35f794a22",
+              "0684e1e7-5067-46e6-8a15-6f84742c344f",
+              "3c10e6c7-f9b2-43cb-9d1c-d6f9fffbe9a6"
+            ],
+            "BoundingBox": {
+              "Top": 0.5624880194664001,
+              "Left": 0.3859257698059082,
+              "Height": 0.012133175507187843,
+              "Width": 0.3489566370844841
+            },
+            "PageNum": 1,
+            "Text": "9.74% , 10.74%, 11.74%, 14.74% or 16.74%,"
+          }
+        ]
       },
       "APR - Cash Advances": {
         "ClassId": 3,
-        "Confidence": 0,
-        "NumDetections": 0,
-        "Optional": true,
+        "Confidence": 0.24263609320552354,
+        "NumDetections": 11,
+        "NumDetectedValues": 6,
         "SortOrder": 3,
-        "Value": "",
-        "Detections": []
+        "Optional": true,
+        "Value": "17.90%",
+        "Detections": [
+          {
+            "ClassId": 3,
+            "ClassName": "APR - Cash Advances",
+            "Confidence": 0.6725578308105469,
+            "Blocks": [
+              "5069c320-c03b-4141-bae5-c0a6724696fc"
+            ],
+            "BoundingBox": {
+              "Top": 0.06389515846967697,
+              "Left": 0.38662275671958923,
+              "Height": 0.010600382462143898,
+              "Width": 0.054978009313344955
+            },
+            "PageNum": 2,
+            "Text": "17.90%"
+          },
+          {
+            "ClassId": 3,
+            "ClassName": "APR - Cash Advances",
+            "Confidence": 0.8752750158309937,
+            "Blocks": [
+              "742c22d9-f1c3-4656-b6c4-d14e3ffac47e"
+            ],
+            "BoundingBox": {
+              "Top": 0.10753807425498962,
+              "Left": 0.38680940866470337,
+              "Height": 0.010445322841405869,
+              "Width": 0.05487068369984627
+            },
+            "PageNum": 2,
+            "Text": "17.90%"
+          },
+          {
+            "ClassId": 3,
+            "ClassName": "APR - Cash Advances",
+            "Confidence": 0.9543682932853699,
+            "Blocks": [
+              "93658618-0210-4ffa-8335-bb268ccdf7ef"
+            ],
+            "BoundingBox": {
+              "Top": 0.1509190797805786,
+              "Left": 0.38649123907089233,
+              "Height": 0.01051375363022089,
+              "Width": 0.054951731115579605
+            },
+            "PageNum": 2,
+            "Text": "17.90%"
+          }
+        ]
       },
       "APR - Purchases": {
         "ClassId": 4,
-        "Confidence": 0,
-        "NumDetections": 0,
-        "Optional": true,
+        "Confidence": 0.4381123982014198,
+        "NumDetections": 3,
+        "NumDetectedValues": 3,
         "SortOrder": 4,
-        "Value": "",
-        "Detections": []
+        "Optional": true,
+        "Value": "10.74%, 11.74% or 14.74%,",
+        "Detections": [
+          {
+            "ClassId": 4,
+            "ClassName": "APR - Purchases",
+            "Confidence": 0.9715049862861633,
+            "Blocks": [
+              "9747ddda-0e2a-469d-8a50-5d0110f72973",
+              "d4999869-6743-4e62-bc82-091efd550917",
+              "9da92d9b-a2f6-4195-9c72-627d91f1f9a8",
+              "a4be4a8b-b654-4439-bd51-d93e69ca56da"
+            ],
+            "BoundingBox": {
+              "Top": 0.4100354313850403,
+              "Left": 0.3864731788635254,
+              "Height": 0.018635660409927368,
+              "Width": 0.3310415744781494
+            },
+            "PageNum": 1,
+            "Text": "10.74%, 11.74% or 14.74%,"
+          }
+        ]
       },
       "APR - Penalty": {
         "ClassId": 5,
         "Confidence": 0,
         "NumDetections": 0,
-        "Optional": true,
+        "NumDetectedValues": 0,
         "SortOrder": 5,
+        "Optional": true,
         "Value": "",
         "Detections": []
       },
@@ -61,8 +196,9 @@
         "ClassId": 6,
         "Confidence": 0,
         "NumDetections": 0,
-        "Optional": true,
+        "NumDetectedValues": 0,
         "SortOrder": 6,
+        "Optional": true,
         "Value": "",
         "Detections": []
       },
@@ -70,169 +206,779 @@
         "ClassId": 7,
         "Confidence": 0,
         "NumDetections": 0,
-        "Optional": true,
+        "NumDetectedValues": 0,
         "SortOrder": 7,
+        "Optional": true,
         "Value": "",
         "Detections": []
       },
       "Fee - Annual": {
         "ClassId": 8,
-        "Confidence": 0,
-        "NumDetections": 0,
+        "Confidence": 0.880009856097729,
+        "NumDetections": 2,
+        "NumDetectedValues": 1,
         "SortOrder": 8,
-        "Value": "",
-        "Detections": []
+        "Optional": true,
+        "Value": "None",
+        "Detections": [
+          {
+            "ClassId": 8,
+            "ClassName": "Fee - Annual",
+            "Confidence": 0.5712995529174805,
+            "Blocks": [
+              "dfaa01b8-55d6-4afb-90a6-5386221aeb3c"
+            ],
+            "BoundingBox": {
+              "Top": 0.4682910144329071,
+              "Left": 0.38491424918174744,
+              "Height": 0.010436726734042168,
+              "Width": 0.04060839116573334
+            },
+            "PageNum": 2,
+            "Text": "None"
+          },
+          {
+            "ClassId": 8,
+            "ClassName": "Fee - Annual",
+            "Confidence": 0.7201072573661804,
+            "Blocks": [
+              "de3711bb-39f7-461c-9213-0a7b02560ce3"
+            ],
+            "BoundingBox": {
+              "Top": 0.5700742602348328,
+              "Left": 0.3848537802696228,
+              "Height": 0.01048425305634737,
+              "Width": 0.040784332901239395
+            },
+            "PageNum": 2,
+            "Text": "None"
+          }
+        ]
       },
       "Fee - Balance Transfer": {
         "ClassId": 9,
         "Confidence": 0,
         "NumDetections": 0,
+        "NumDetectedValues": 0,
         "SortOrder": 9,
+        "Optional": true,
         "Value": "",
         "Detections": []
       },
       "Fee - Late Payment": {
         "ClassId": 10,
-        "Confidence": 0.6034019589424133,
-        "NumDetections": 1,
+        "Confidence": 0.2806296534153191,
+        "NumDetections": 5,
+        "NumDetectedValues": 4,
         "SortOrder": 10,
-        "Value": "any reasonable attorney's fees We incur, plus the costs and expenses of any legal action,",
+        "Optional": true,
+        "Value": "Up to $25.00",
         "Detections": [
           {
             "ClassId": 10,
             "ClassName": "Fee - Late Payment",
-            "Confidence": 0.6034019589424133,
+            "Confidence": 0.959344744682312,
             "Blocks": [
-              "ae67c294-57b4-41d6-b2bf-17f4d7dc73d8",
-              "15b5cb58-93c0-427f-bafa-a69073631701",
-              "76460133-8ac8-406f-b441-29406043be0a",
-              "06703d3e-c38d-40c7-ae2d-e2e0ca088a7d",
-              "ba37843c-b8a3-4b6b-83e2-28dc8403e842",
-              "fd86e26a-25ab-4981-8ddb-2ae917ea62b0",
-              "71a4cea6-4fbc-4c27-a393-10f37aaac394",
-              "3d8f6abb-e6b6-48c2-be82-0a2895f9d18b",
-              "7aa67712-1f54-4f24-be05-1f2ef9bd14fc",
-              "c1bc2146-7c75-473a-b8db-6d3e49015423",
-              "27418c93-c227-4230-bd75-ccba456e236d",
-              "8a9100c9-b1d9-4896-9bd0-1a8afb15685b",
-              "895191fc-1821-4e0c-8ccb-3c41ca6e7d9d",
-              "b4a9eab2-a4c0-4580-b71d-40ac9b13bc95",
-              "b176c1e9-e374-48b6-8e4a-ed16797a49d0"
+              "8be393dc-865a-4364-8938-c59e3affdcb2",
+              "b0c4d99e-c37d-4347-a1c9-4d191b2dcb04",
+              "ae9039a3-42cb-4286-9c93-21b56a5ca76d"
             ],
             "BoundingBox": {
-              "Top": 0.5310397148132324,
-              "Left": 0.16350233554840088,
-              "Height": 0.013055950403213501,
-              "Width": 0.6957982555031776
+              "Top": 0.6175328493118286,
+              "Left": 0.3850840628147125,
+              "Height": 0.013096571899950504,
+              "Width": 0.09347331151366234
             },
-            "PageNum": 4,
-            "Text": "any reasonable attorney's fees We incur, plus the costs and expenses of any legal action,"
+            "PageNum": 2,
+            "Text": "Up to $25.00"
           }
         ]
       },
       "Fee - Returned Payment": {
         "ClassId": 11,
-        "Confidence": 0,
-        "NumDetections": 0,
+        "Confidence": 0.14508413209384544,
+        "NumDetections": 11,
+        "NumDetectedValues": 9,
         "SortOrder": 11,
-        "Value": "",
-        "Detections": []
+        "Optional": true,
+        "Value": "Up to $25.00",
+        "Detections": [
+          {
+            "ClassId": 11,
+            "ClassName": "Fee - Returned Payment",
+            "Confidence": 0.9889686703681946,
+            "Blocks": [
+              "90e528ee-c9ed-4432-8b7b-ac10e83314d4",
+              "4d0c5b1b-effb-4089-84ac-fb1553003b9d",
+              "b94f61b3-f6c3-4fc4-b3eb-ffa9ffc77236"
+            ],
+            "BoundingBox": {
+              "Top": 0.6469276547431946,
+              "Left": 0.38502928614616394,
+              "Height": 0.013004827313125134,
+              "Width": 0.09341846778988838
+            },
+            "PageNum": 2,
+            "Text": "Up to $25.00"
+          }
+        ]
       },
       "Fee - Foreign Transaction": {
         "ClassId": 12,
-        "Confidence": 0,
-        "NumDetections": 0,
+        "Confidence": 0.9933143258094788,
+        "NumDetections": 1,
+        "NumDetectedValues": 1,
         "SortOrder": 12,
-        "Value": "",
-        "Detections": []
+        "Optional": true,
+        "Value": "1.00% of each transaction in U.S. dollars",
+        "Detections": [
+          {
+            "ClassId": 12,
+            "ClassName": "Fee - Foreign Transaction",
+            "Confidence": 0.9933143258094788,
+            "Blocks": [
+              "073470e9-3e72-4413-86ba-e09d2f8fa6cc",
+              "a05d7a1a-5b01-4e41-adfb-bf347cc09556",
+              "5db95960-5496-4daf-bb6d-5b368c9d75ea",
+              "684cc376-cb8c-4e75-ab32-eb5ccc178142",
+              "b64e7007-c79f-4771-aca5-ba8228af65ad",
+              "0ae24474-57b2-47a8-8ea5-da55b2e415dc",
+              "175d9b66-3f39-4b47-923b-4b04db7f4cbe"
+            ],
+            "BoundingBox": {
+              "Top": 0.5409907102584839,
+              "Left": 0.384962260723114,
+              "Height": 0.010942058637738228,
+              "Width": 0.29446231201291084
+            },
+            "PageNum": 2,
+            "Text": "1.00% of each transaction in U.S. dollars"
+          }
+        ]
       },
       "Card Name": {
         "ClassId": 14,
-        "Confidence": 0.5,
-        "NumDetections": 4,
+        "Confidence": 0.07692307692307691,
+        "NumDetections": 30,
+        "NumDetectedValues": 13,
         "SortOrder": 13,
         "Values": [
           {
-            "Confidence": 0.5000929110615387,
-            "Value": "Visa Credit Card",
+            "Confidence": 0.0818954539536999,
+            "Value": "Visa Signature",
             "Detections": [
               {
                 "ClassId": 14,
                 "ClassName": "Card Name",
-                "Confidence": 0.999125063419342,
+                "Confidence": 0.9976721405982971,
                 "Blocks": [
-                  "00f82f8b-0b9e-4b22-a06a-aa729dcb205c",
-                  "acc76457-29e6-4783-9878-0dbee5cede77",
-                  "9b1d0448-3ad3-4c0a-8bbe-ce396bf482e1"
+                  "1fd57edf-7ad2-45e6-bfd2-7f5bc82d32c4",
+                  "f1dff1c7-5749-4099-8985-c623a8e98215"
                 ],
                 "BoundingBox": {
-                  "Top": 0.6116645932197571,
-                  "Left": 0.19350315630435944,
-                  "Height": 0.010187864303588867,
-                  "Width": 0.12847916781902313
+                  "Top": 0.39420536160469055,
+                  "Left": 0.383637398481369,
+                  "Height": 0.012831054627895355,
+                  "Width": 0.11415707319974899
                 },
-                "PageNum": 4,
-                "Text": "Visa Credit Card"
+                "PageNum": 1,
+                "Text": "Visa Signature"
               },
               {
                 "ClassId": 14,
                 "ClassName": "Card Name",
-                "Confidence": 0.999560534954071,
+                "Confidence": 0.9976218342781067,
                 "Blocks": [
-                  "19ce7147-d101-4f80-a4eb-90df67cacfc8",
-                  "dad3b352-bb4f-41d2-b47f-d38357786723",
-                  "ed768a7c-979f-46ca-932d-1174684aa26b"
+                  "775dddb9-2cfe-4ec6-861d-5ba738df48f2",
+                  "c48c3e84-e130-4e4b-a6d7-85032b819b6a"
                 ],
                 "BoundingBox": {
-                  "Top": 0.6405829787254333,
-                  "Left": 0.09386038780212402,
-                  "Height": 0.010319800116121769,
-                  "Width": 0.12679750844836235
+                  "Top": 0.6232449412345886,
+                  "Left": 0.38383010029792786,
+                  "Height": 0.012775472365319729,
+                  "Width": 0.11412855982780457
                 },
-                "PageNum": 4,
-                "Text": "Visa Credit Card"
+                "PageNum": 1,
+                "Text": "Visa Signature"
               },
               {
                 "ClassId": 14,
                 "ClassName": "Card Name",
-                "Confidence": 0.9995934367179871,
+                "Confidence": 0.9975680708885193,
                 "Blocks": [
-                  "0bde494c-8395-43bf-94c0-48b8b7f3e022",
-                  "f9a41bf1-2f82-4545-9552-73eb9244a3e8",
-                  "83a0ea9c-b03a-44d6-9003-a7c19b399626"
+                  "f95a6205-b36b-4c96-b2a8-80d87809346e",
+                  "2cd9633e-e071-4b7f-937b-80679ed023c1"
                 ],
                 "BoundingBox": {
-                  "Top": 0.6550257205963135,
-                  "Left": 0.7158324122428894,
-                  "Height": 0.01029503159224987,
-                  "Width": 0.12333172932267189
+                  "Top": 0.8361994028091431,
+                  "Left": 0.3835552930831909,
+                  "Height": 0.012909586541354656,
+                  "Width": 0.11406070739030838
                 },
-                "PageNum": 4,
-                "Text": "Visa Credit Card"
+                "PageNum": 1,
+                "Text": "Visa Signature"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9975032210350037,
+                "Blocks": [
+                  "6eaebf62-4386-46a9-b15d-ab657f3814e5",
+                  "bda1e8bf-6199-4f4e-87ae-659a1e107f11"
+                ],
+                "BoundingBox": {
+                  "Top": 0.13613104820251465,
+                  "Left": 0.3842383325099945,
+                  "Height": 0.01291460171341896,
+                  "Width": 0.11387869715690613
+                },
+                "PageNum": 2,
+                "Text": "Visa Signature"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9917585849761963,
+                "Blocks": [
+                  "5184a5fe-72c6-421c-9c5d-da6f13ece49a",
+                  "9994b72e-235b-4f83-8008-4d944ac5714e"
+                ],
+                "BoundingBox": {
+                  "Top": 0.5118041634559631,
+                  "Left": 0.22370801866054535,
+                  "Height": 0.012836689129471779,
+                  "Width": 0.10653972625732422
+                },
+                "PageNum": 2,
+                "Text": "Visa Signature"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9897710084915161,
+                "Blocks": [
+                  "aee7628b-e90b-4599-a867-59d77d8b274a",
+                  "8a1873d0-d8bd-4040-aba5-80a06e31f52d"
+                ],
+                "BoundingBox": {
+                  "Top": 0.824383556842804,
+                  "Left": 0.7219780087471008,
+                  "Height": 0.013290771283209324,
+                  "Width": 0.11680322140455246
+                },
+                "PageNum": 2,
+                "Text": "Visa Signature"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.980606734752655,
+                "Blocks": [
+                  "2b502494-6e76-41a4-8afe-65dfaa564eb1",
+                  "b9bd3ec1-e3a8-4d32-af10-b9c806bd6e3a"
+                ],
+                "BoundingBox": {
+                  "Top": 0.12688885629177094,
+                  "Left": 0.05826728045940399,
+                  "Height": 0.013149536214768887,
+                  "Width": 0.11370229721069336
+                },
+                "PageNum": 5,
+                "Text": "Visa Signature"
               }
             ]
           },
           {
-            "Confidence": 0.4999070889384612,
-            "Value": "VISA PLATINUMIVISA REWARDS",
+            "Confidence": 0.0818954539536917,
+            "Value": "Visa Platinum Secured",
             "Detections": [
               {
                 "ClassId": 14,
                 "ClassName": "Card Name",
-                "Confidence": 0.9996284246444702,
+                "Confidence": 0.9976031184196472,
                 "Blocks": [
-                  "359f8810-2d6a-43bb-8d99-0f6ee9032728",
-                  "f48986ce-983a-4821-b4f9-b7d03bcc3e27",
-                  "6840d615-ac55-4959-8d33-11dc2833842c"
+                  "8917bcd0-81c6-4b4f-b08a-37bbaffbbe73",
+                  "f00de332-c80f-4bd0-ba8b-dfc59a7107e4",
+                  "19e54936-6d58-49fe-81b1-7deede18a32a"
                 ],
                 "BoundingBox": {
-                  "Top": 0.16754531860351562,
-                  "Left": 0.6558783054351807,
-                  "Height": 0.01093764416873455,
-                  "Width": 0.2847636640071869
+                  "Top": 0.22548474371433258,
+                  "Left": 0.38353830575942993,
+                  "Height": 0.01061574462801218,
+                  "Width": 0.17601589858531952
                 },
                 "PageNum": 1,
-                "Text": "VISA PLATINUMIVISA REWARDS"
+                "Text": "Visa Platinum Secured"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9977421760559082,
+                "Blocks": [
+                  "9dc58d81-4eaf-4290-9c72-15196faca88b",
+                  "89dac0a9-4294-408b-b947-e0dfccd16bb8",
+                  "e0acc914-32f6-4e68-8814-dbec74e0ce0a"
+                ],
+                "BoundingBox": {
+                  "Top": 0.4721176028251648,
+                  "Left": 0.38380300998687744,
+                  "Height": 0.010541585274040699,
+                  "Width": 0.17579183727502823
+                },
+                "PageNum": 1,
+                "Text": "Visa Platinum Secured"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9975566864013672,
+                "Blocks": [
+                  "93e50090-5974-43aa-a8f8-6be3ba939493",
+                  "5bc1fb74-01b8-4eeb-b9ec-a2a0961cb3c4",
+                  "8cb98134-fc7a-48e4-b40e-90e9414481e5"
+                ],
+                "BoundingBox": {
+                  "Top": 0.6850060224533081,
+                  "Left": 0.38352516293525696,
+                  "Height": 0.011141113005578518,
+                  "Width": 0.1759081333875656
+                },
+                "PageNum": 1,
+                "Text": "Visa Platinum Secured"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.997358500957489,
+                "Blocks": [
+                  "e2ceb625-2d64-47e5-b23d-ab170dc6a50a",
+                  "bc98880e-9391-41b8-9c42-4ca4e560f4b7",
+                  "2b5f8912-91f4-46eb-9449-97dcc67cf5d4"
+                ],
+                "BoundingBox": {
+                  "Top": 0.04915165528655052,
+                  "Left": 0.38417690992355347,
+                  "Height": 0.01063048280775547,
+                  "Width": 0.17601891607046127
+                },
+                "PageNum": 2,
+                "Text": "Visa Platinum Secured"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9971282482147217,
+                "Blocks": [
+                  "9b7563a5-5bb6-44d6-a0cc-305458ca3376",
+                  "831e5b58-41b1-402c-b1a1-dd6d8bcf6edd",
+                  "90cace6b-521f-4d86-ba08-d3b4bd11a31c"
+                ],
+                "BoundingBox": {
+                  "Top": 0.4047214388847351,
+                  "Left": 0.1682034581899643,
+                  "Height": 0.010316350497305393,
+                  "Width": 0.16662805527448654
+                },
+                "PageNum": 2,
+                "Text": "Visa Platinum Secured"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.08189545395367087,
+            "Value": "Visa Platinum Rewards",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9974504113197327,
+                "Blocks": [
+                  "dff2737f-560c-4a12-a98f-e5272ab88b9c",
+                  "034f4abc-9378-4749-a79b-7b7a1bd3c2ea",
+                  "9f5614d6-391c-4495-b096-c09db1e11983"
+                ],
+                "BoundingBox": {
+                  "Top": 0.3096943199634552,
+                  "Left": 0.3836177587509155,
+                  "Height": 0.010616353712975979,
+                  "Width": 0.17984453588724136
+                },
+                "PageNum": 1,
+                "Text": "Visa Platinum Rewards"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.997393012046814,
+                "Blocks": [
+                  "c193f6dd-0b1f-41c9-85b1-6e37ae8834a6",
+                  "3dd3061b-8b21-444c-bf38-e043c289abb0",
+                  "ac6b74af-fc64-4e89-ab8e-4824e03d3008"
+                ],
+                "BoundingBox": {
+                  "Top": 0.5474674701690674,
+                  "Left": 0.3838740587234497,
+                  "Height": 0.010583736002445221,
+                  "Width": 0.1800505444407463
+                },
+                "PageNum": 1,
+                "Text": "Visa Platinum Rewards"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9970704317092896,
+                "Blocks": [
+                  "d03b7133-c464-408c-a97e-3509cfd50aa5",
+                  "0a7a0574-6b7d-4b89-8ec2-45d542e836fd",
+                  "7a92caa7-c5cb-409e-83b3-fa571bb6440c"
+                ],
+                "BoundingBox": {
+                  "Top": 0.7609241604804993,
+                  "Left": 0.38373446464538574,
+                  "Height": 0.010452703572809696,
+                  "Width": 0.17956826090812683
+                },
+                "PageNum": 1,
+                "Text": "Visa Platinum Rewards"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9975242018699646,
+                "Blocks": [
+                  "39cb1ad0-1233-46d2-ac9b-259ed242ca52",
+                  "7be6f78b-07e2-436f-aebd-564b1f9c9afc",
+                  "e6a98bcb-7676-4091-8c58-57aa880ba14b"
+                ],
+                "BoundingBox": {
+                  "Top": 0.09285363554954529,
+                  "Left": 0.38423579931259155,
+                  "Height": 0.01055160816758871,
+                  "Width": 0.18002616614103317
+                },
+                "PageNum": 2,
+                "Text": "Visa Platinum Rewards"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9926456212997437,
+                "Blocks": [
+                  "7ac28dbe-9ec1-468d-8389-8308c7f2ab0a",
+                  "b8a9749a-aa56-4693-8da3-ed958481362f",
+                  "21e1ada8-a95f-40aa-a997-22fd81608829"
+                ],
+                "BoundingBox": {
+                  "Top": 0.04696829617023468,
+                  "Left": 0.058347634971141815,
+                  "Height": 0.010562770068645477,
+                  "Width": 0.1805099919438362
+                },
+                "PageNum": 5,
+                "Text": "Visa Platinum Rewards"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.0818947393400434,
+            "Value": "Secured, Visa Platinum Rewards",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9970099925994873,
+                "Blocks": [
+                  "e8b504c5-7c47-4ec3-836d-0c655e9fca59",
+                  "91a44704-0afb-449f-9fbb-0a13647c9003",
+                  "d8da49fa-0c50-47c5-9a3d-df4fd8a3387f",
+                  "143c6192-81a4-4835-a72a-525947467d70"
+                ],
+                "BoundingBox": {
+                  "Top": 0.4976089596748352,
+                  "Left": 0.06186509504914284,
+                  "Height": 0.011740661226212978,
+                  "Width": 0.23763354495167732
+                },
+                "PageNum": 2,
+                "Text": "Secured, Visa Platinum Rewards"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9970816373825073,
+                "Blocks": [
+                  "93a4febc-518d-48ad-a4d8-6c2f41e832e6",
+                  "a556a575-a4a5-44a7-95b3-33c39b97f6c3",
+                  "2eb989e1-3698-4bcb-beae-5e9cfc7acb39",
+                  "e0c32b07-5936-4145-ba7b-1d5e3f8573c0"
+                ],
+                "BoundingBox": {
+                  "Top": 0.5558368563652039,
+                  "Left": 0.06175586208701134,
+                  "Height": 0.011802286840975285,
+                  "Width": 0.23815851286053658
+                },
+                "PageNum": 2,
+                "Text": "Secured, Visa Platinum Rewards"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.08189464877233418,
+            "Value": "Visa Platinum",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9965507388114929,
+                "Blocks": [
+                  "5df990af-9ad1-4bdb-9990-a811ae8e379d",
+                  "f51b75c5-a67d-4595-95e2-5a52f179c46b"
+                ],
+                "BoundingBox": {
+                  "Top": 0.48301059007644653,
+                  "Left": 0.22410976886749268,
+                  "Height": 0.010541544295847416,
+                  "Width": 0.09996364265680313
+                },
+                "PageNum": 2,
+                "Text": "Visa Platinum"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9971495866775513,
+                "Blocks": [
+                  "8a6d626d-5626-4628-9ecf-2af77426cc61",
+                  "af78370b-e50c-4ee4-9b64-c351071e1f11"
+                ],
+                "BoundingBox": {
+                  "Top": 0.5411137342453003,
+                  "Left": 0.26312416791915894,
+                  "Height": 0.010622111149132252,
+                  "Width": 0.09989502280950546
+                },
+                "PageNum": 2,
+                "Text": "Visa Platinum"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.08137111892207782,
+            "Value": "Visa Platinum Secured, Visa Platinum Rewards:",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9935975074768066,
+                "Blocks": [
+                  "c2c23bbd-352b-4db5-b8a6-db965a8f1280",
+                  "535d7a59-0a1e-4042-94ea-01c4e1043adb",
+                  "f036c9c0-0731-405e-a136-f8b4fd62d975",
+                  "8a1988b5-5f14-4ff0-a5ed-55ad3016765b",
+                  "a7138f34-7a8e-49ae-bfdb-18dbb1f55bd2",
+                  "3ce624bb-2d3f-4d58-9c7e-8f8081768527"
+                ],
+                "BoundingBox": {
+                  "Top": 0.2503493130207062,
+                  "Left": 0.3429241478443146,
+                  "Height": 0.011695068329572678,
+                  "Width": 0.3483186885714531
+                },
+                "PageNum": 3,
+                "Text": "Visa Platinum Secured, Visa Platinum Rewards:"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.08095863513156124,
+            "Value": "Visa Platinum Secured:",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9885607957839966,
+                "Blocks": [
+                  "1ca0dab3-f08c-4384-a8ff-7ac073a0fba4",
+                  "8e68a3dd-7fb2-4c28-a67e-e9212e42c2d9",
+                  "090174a9-3111-41f3-b69b-829c6ca50ba6"
+                ],
+                "BoundingBox": {
+                  "Top": 0.20677559077739716,
+                  "Left": 0.15594275295734406,
+                  "Height": 0.010565531440079212,
+                  "Width": 0.17013918608427048
+                },
+                "PageNum": 3,
+                "Text": "Visa Platinum Secured:"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.08013844151028196,
+            "Value": "Visa Platinum Secured, Visa Platinum Rewards",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9785456657409668,
+                "Blocks": [
+                  "da50c53f-7895-40da-b237-726b310e63a3",
+                  "222759ba-1534-4f56-a9db-21352f0d6f45",
+                  "511d312f-d433-4f61-a1b9-3a98356c55f2",
+                  "adde7c4a-bf9c-4dad-a131-5cf3ca6ac907",
+                  "5238fb31-f016-46ff-b736-5e379e56adb8",
+                  "c53ae4dd-abdf-4145-b252-55f3a35d77f0"
+                ],
+                "BoundingBox": {
+                  "Top": 0.8243656158447266,
+                  "Left": 0.29971009492874146,
+                  "Height": 0.012248290702700615,
+                  "Width": 0.3791096359491348
+                },
+                "PageNum": 2,
+                "Text": "Visa Platinum Secured, Visa Platinum Rewards"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.07845114379509668,
+            "Value": "VISA PLATINUM/VISA PLATINUM REWARDS/VISA\nSIGNATURE",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.8388195037841797,
+                "Blocks": [
+                  "22689b79-ede5-4b95-b6d3-5f69208ef7bd",
+                  "a64c7b2f-5c96-4da4-aa03-812cd09cceed",
+                  "dc41afd9-201c-4888-b43f-ac59f7e95b3a",
+                  "1b7b38a0-940b-4627-981a-2bb32c90e7b3",
+                  "1ea01317-80e7-4380-a03c-33a9e3245761"
+                ],
+                "BoundingBox": {
+                  "Top": 0.15226255357265472,
+                  "Left": 0.5022902488708496,
+                  "Height": 0.030679178424179554,
+                  "Width": 0.43404360115528107
+                },
+                "PageNum": 1,
+                "Text": "VISA PLATINUM/VISA PLATINUM REWARDS/VISA\nSIGNATURE"
+              },
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.7390664219856262,
+                "Blocks": [
+                  "72fe445f-c3b7-4e75-8050-97ee63f5f079",
+                  "b76ba16c-de4b-462f-905f-7ca32dc543f3",
+                  "a0d5a171-3b80-4fbb-b257-b233a2b9691d",
+                  "eddbd1ad-a903-4d0e-bfb5-d51a1e9c188e",
+                  "801d7b6b-73ab-4e55-b596-91077a461599"
+                ],
+                "BoundingBox": {
+                  "Top": 0.1671990305185318,
+                  "Left": 0.5109935998916626,
+                  "Height": 0.02704964019358158,
+                  "Width": 0.42945854365825653
+                },
+                "PageNum": 4,
+                "Text": "VISA PLATINUM/VISA PLATINUM REWARDS/VISA\nSIGNATURE"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.07841449532798163,
+            "Value": "Platinum",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9574950933456421,
+                "Blocks": [
+                  "0f08e016-7724-467d-a80f-2f8cc427097c"
+                ],
+                "BoundingBox": {
+                  "Top": 0.882012128829956,
+                  "Left": 0.09709496051073074,
+                  "Height": 0.010372070595622063,
+                  "Width": 0.0681237056851387
+                },
+                "PageNum": 4,
+                "Text": "Platinum"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.07715960289487692,
+            "Value": "Visa Signature:",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.9421719908714294,
+                "Blocks": [
+                  "3aef0b68-cf8c-422b-8bb8-cbf48b71e838",
+                  "5530da38-644f-4361-886f-4add5a908e36"
+                ],
+                "BoundingBox": {
+                  "Top": 0.2931901514530182,
+                  "Left": 0.34271228313446045,
+                  "Height": 0.013354462571442127,
+                  "Width": 0.11151082813739777
+                },
+                "PageNum": 3,
+                "Text": "Visa Signature:"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.05748819908520977,
+            "Value": "Visa",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.7019705772399902,
+                "Blocks": [
+                  "d034392d-cb9e-410e-a633-c765119416ff"
+                ],
+                "BoundingBox": {
+                  "Top": 0.569959282875061,
+                  "Left": 0.2629531919956207,
+                  "Height": 0.010585937649011612,
+                  "Width": 0.03204880282282829
+                },
+                "PageNum": 2,
+                "Text": "Visa"
+              }
+            ]
+          },
+          {
+            "Confidence": 0.05654261335947392,
+            "Value": "Visa Platinum Rewards,\nNone\nVisa Signature",
+            "Detections": [
+              {
+                "ClassId": 14,
+                "ClassName": "Card Name",
+                "Confidence": 0.6904243230819702,
+                "Blocks": [
+                  "4c0cafad-38a6-4797-a087-b7a4cb20a854",
+                  "0e0a0edf-5050-444a-b6b6-247bedde308d",
+                  "5387dba3-ad1a-47c5-b61b-fc24f7b2445a",
+                  "e2942455-138d-4d4c-bd69-0189b6575478",
+                  "56f63f7e-2859-422f-86d9-23574e998202",
+                  "b0c5a0da-7cc0-4ee1-8b4a-23b0dbacf764"
+                ],
+                "BoundingBox": {
+                  "Top": 0.4192999005317688,
+                  "Left": 0.060276344418525696,
+                  "Height": 0.02738944161683321,
+                  "Width": 0.36531803011894226
+                },
+                "PageNum": 2,
+                "Text": "Visa Platinum Rewards,\nNone\nVisa Signature"
               }
             ]
           }
@@ -240,60 +986,119 @@
       },
       "Provider Address": {
         "ClassId": 15,
-        "Confidence": 0.5009801338701653,
-        "NumDetections": 2,
+        "Confidence": 0.1866029195608454,
+        "NumDetections": 6,
+        "NumDetectedValues": 6,
         "SortOrder": 14,
-        "Value": "5901 Gibraltar Drive, Pleasanton, CA 94588",
+        "Optional": true,
+        "Value": "P.O. Box 40769,\nJacksonville, FL, 32203",
         "Detections": [
           {
             "ClassId": 15,
             "ClassName": "Provider Address",
-            "Confidence": 0.9994670748710632,
+            "Confidence": 0.9956236481666565,
             "Blocks": [
-              "7d99c8cd-bddb-49cd-a828-954a13e21629",
-              "84519bab-a04d-4f3c-9ab3-c9855cc792d7",
-              "3a9e4e89-aef8-4ad8-8ee3-fccd882ae8a2",
-              "1e55ecad-d842-4a90-b9c3-5e2e698da21d",
-              "de53ea1b-315f-4758-be32-83fe7124a770",
-              "c7aabf5e-5e26-4a3d-9ca6-8d3287b84028"
+              "4cddae38-8ce6-417e-9e35-84ce7ea76349",
+              "16c9b8ff-2eb7-4808-99ee-d0614e4790ae",
+              "9d7e7c01-0426-440c-bab9-562db9eaa549",
+              "61d91aec-3333-40b7-bc40-51cc01df1ae2",
+              "af98066d-595d-4060-b171-19ffc6e68b18",
+              "31dd2b5a-a3d8-4241-ab01-e0bc891cf5a2"
             ],
             "BoundingBox": {
-              "Top": 0.11821919679641724,
-              "Left": 0.06788285821676254,
-              "Height": 0.009210583753883839,
-              "Width": 0.2839433513581753
+              "Top": 0.41835135221481323,
+              "Left": 0.058534175157547,
+              "Height": 0.02645825408399105,
+              "Width": 0.8812236487865448
             },
-            "PageNum": 1,
-            "Text": "5901 Gibraltar Drive, Pleasanton, CA 94588"
+            "PageNum": 6,
+            "Text": "P.O. Box 40769,\nJacksonville, FL, 32203"
           }
         ]
       },
       "Provider Name": {
         "ClassId": 16,
-        "Confidence": 0.3220982724304482,
-        "NumDetections": 3,
+        "Confidence": 0.13394671408363762,
+        "NumDetections": 11,
+        "NumDetectedValues": 8,
         "SortOrder": 15,
-        "Value": "1st United Services Credit Union",
+        "Value": "121 Financial Credit Union",
         "Detections": [
           {
             "ClassId": 16,
             "ClassName": "Provider Name",
-            "Confidence": 0.9497994780540466,
+            "Confidence": 0.9733462929725647,
             "Blocks": [
-              "3a23a9fb-2ef6-4ec8-9c2e-1cc564d9ab7b",
-              "fe9742f1-f5a8-4a22-bd23-06d2e3e678e3",
-              "05295316-89fa-4392-aad7-03abe8c59ee9",
-              "014716bd-8df5-4b88-ac81-86aa2b888eba",
-              "042d5300-822d-42f4-b560-ecd882590224"
+              "7da44311-ec68-4b75-b1d7-a3a252bef8c0",
+              "821efa21-e595-4df9-a771-d792d2611cd2",
+              "08e19245-706a-470f-8061-95126b709f38",
+              "5beefd29-5392-47bd-9f3c-0d907af0dcec"
             ],
             "BoundingBox": {
-              "Top": 0.24288952350616455,
-              "Left": 0.23464378714561462,
-              "Height": 0.010333182290196419,
-              "Width": 0.24001730605959892
+              "Top": 0.2586304843425751,
+              "Left": 0.2307714968919754,
+              "Height": 0.010401730425655842,
+              "Width": 0.19084085524082184
             },
-            "PageNum": 1,
-            "Text": "1st United Services Credit Union"
+            "PageNum": 4,
+            "Text": "121 Financial Credit Union"
+          },
+          {
+            "ClassId": 16,
+            "ClassName": "Provider Name",
+            "Confidence": 0.9975368976593018,
+            "Blocks": [
+              "8938afcd-5134-41b4-be68-f281fff8d548",
+              "b5c969a5-721d-48f6-9da0-b5dc73b79262",
+              "3f059905-99d4-42ad-81a2-cedd9e6f8609",
+              "a950fe75-3f10-41a2-b521-64a0559bf01c"
+            ],
+            "BoundingBox": {
+              "Top": 0.2877078354358673,
+              "Left": 0.36297914385795593,
+              "Height": 0.008531839586794376,
+              "Width": 0.15514950826764107
+            },
+            "PageNum": 12,
+            "Text": "121 Financial Credit Union"
+          },
+          {
+            "ClassId": 16,
+            "ClassName": "Provider Name",
+            "Confidence": 0.9970521926879883,
+            "Blocks": [
+              "b26dcff2-fa62-41a2-81f1-947d5320cb49",
+              "0001fcda-2257-4add-b911-1016565c9e47",
+              "c8c18f51-eb8e-48d8-9ef2-dcf75f23ef25",
+              "8e9328b2-70bc-45c8-856b-1186eccfcca8"
+            ],
+            "BoundingBox": {
+              "Top": 0.2980751395225525,
+              "Left": 0.6746349334716797,
+              "Height": 0.008441426791250706,
+              "Width": 0.15590668469667435
+            },
+            "PageNum": 12,
+            "Text": "121 Financial Credit Union"
+          },
+          {
+            "ClassId": 16,
+            "ClassName": "Provider Name",
+            "Confidence": 0.9970863461494446,
+            "Blocks": [
+              "2f9e4907-bc39-45e6-923c-04a75bc7cde5",
+              "82a23668-27b0-47a2-a301-0b173908d288",
+              "e9b26ee8-e658-417a-8533-f436d73263f3",
+              "98551e94-db31-4606-bb5a-987bef437121"
+            ],
+            "BoundingBox": {
+              "Top": 0.31889647245407104,
+              "Left": 0.7627140879631042,
+              "Height": 0.008487778715789318,
+              "Width": 0.15369189530611038
+            },
+            "PageNum": 12,
+            "Text": "121 Financial Credit Union"
           }
         ]
       }

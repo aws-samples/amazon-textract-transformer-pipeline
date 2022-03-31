@@ -1,0 +1,59 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
+/**
+ * Base/common styling affecting multiple components
+ */
+
+// Semantic color variables:
+:root {
+  --color-accent: rgb(63, 81, 181);
+  --color-error: rgb(221, 44, 0);
+}
+
+// Some basic cross-document layout tweaks:
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  position: relative;
+  font-weight: normal;
+}
+
+body {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.col-taskobject {
+  max-height: 100%;
+  min-height: 25%;
+  text-align: center;
+}
+
+.col-fields {
+  height: 100%;
+  overflow: auto;
+}
+
+// The following styles are shared between a couple of components:
+.field-detections {
+  color: var(--color-accent);
+  background-color: #ddd;
+  font-size: 0.8rem;
+  overflow: hidden;  // Force child margins inside container
+  padding-left: 26px;
+  padding-top: 4px;
+
+  p,ul,ol {
+    margin-bottom: 0.2rem;
+  }
+}
+
+@mixin confidence-bar {
+  color: white;
+  padding-left: 5px;
+  font-size: 7px;
+  line-height: 9px;
+}
