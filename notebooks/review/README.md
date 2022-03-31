@@ -13,7 +13,7 @@ Don't panic! You're free to just consume the final template as-is for the sample
 Assuming you have [Node.js installed](https://nodejs.org/en/download/), then from this folder you can run:
 
 - `npm install` to install the required dependencies
-- `npm run dev` to start continuously monitoring, building and serving the app as you make changes (see http://localhost:3000 and http://localhost:3000/index-noliquid.html in your browser)
+- `npm run dev` to start continuously monitoring, building and serving the app as you make changes (see http://localhost:3000 and http://localhost:3000/index-noliquid.html in your browser if running this locally, or refer to the "Building in SageMaker" section below in SageMaker)
 - `npm run build` to build the final A2I-ready template file to `dist/index.html`
 
 Once the final template is built, you can test it out further with the [SageMaker RenderUiTemplate API](https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_RenderUiTemplate.html) (via AWS SDKs for [Python](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sagemaker.html#SageMaker.Client.render_ui_template), [JavaScript](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/clients/client-sagemaker/classes/renderuitemplatecommand.html), or others) before loading in to Amazon A2I or Amazon SageMaker Ground Truth.
@@ -253,3 +253,22 @@ Because the Vue component is composed at a higher level of abstraction than the 
 In other words, the more you modularize to separate native Custom Elements and complex Liquid templating (option 1), the further your code will likely drift from normal Vue app patterns. Eventually, the value of using Vue would likely diminish to not being worth the cost of managing these alignment gaps (maybe you could even start writing native Custom Elements instead?).
 
 By pushing a bit more of the functional complexity into consolidated Vue components (or even going as far as a monolithic `<div id="app">`), you'll likely get more benefit from the framework at the expense of less templating flexibility.
+
+
+### Building in SageMaker (Studio)
+
+As shown in the [accompanying notebook](../3.%20Human%20Review.ipynb), you can certainly build and preview the template from inside SageMaker Studio/notebooks. But what about using these JupyterLab-based environments for significant template development/extension work?
+
+There are some factors you'll want to consider (correct at time of writing):
+
+1. The code in this sample/folder uses 2-space indentation (common in JS and web projects), while the default JupyterLab indentation is 4 spaces (common in Python projects).
+  - You can change indentation in the bottom right of the file editor (button showing `Spaces: 4` by default) or through `Settings > Advanced Settings Editor > Text Editor`. However, this setting is global - so you'll want to switch it back to 4 spaces when returning to editing Python or notebook files instead.
+2. Remember if using a system terminal for your `npm` commands in SageMaker Studio, that *system terminals* run on the environment that hosts your JupyterLab instance, which is **separate from** the environments for your *notebook kernels* or "image terminals".
+  - A version of NodeJS will already be installed in the system environment and you may face unexpected errors if you try to overwrite/upgrade the system NodeJS version. At the time of writing, SM Studio used NodeJS v12 which was also compatible with this Vue project.
+3. If running the Vite dev server `npm run dev`, you'll need to connect through SageMaker port proxy path.
+  - To access a Vite dev server run from a system terminal with `npm run dev`, instead of `http://localhost:3000/index-noliquid.html` you would connect to your own domain's address with a port-forwarding proxy path - something like: `https://{DOMAIN_ID}.studio.{AWS_REGION}.sagemaker.aws/jupyter/default/proxy/3000/index-noliquid.html`
+  - This setup will likely need some additional [configuration](https://vitejs.dev/config/) of Vite in [vite.config.js](vite.config.js), to ensure the client fetches assets under the `/jupyter/default/proxy/3000/` path while the server receives the requests as if they're from the root path `/`.
+
+Alternatively to avoid tackling these issues, you could use a local IDE for interactive template development with the `npm run dev` live-updating dev server - and then upload the edited source to SageMaker to run final tests in the A2I context.
+
+> **Remember:** You can use the dev server and the alternative `index-noliquid.html` page to iteratively build and test UI functionality with placeholder fulfilled template values, without having to go through the full `smclient.render_ui_template(...)` flow to see every change.
