@@ -1,18 +1,20 @@
 # Post-Process OCR Results with Transformer Models on Amazon SageMaker
 
-[Amazon Textract](https://docs.aws.amazon.com/textract/latest/dg/what-is.html) is a service that automatically extracts text, handwriting, and structured data from scanned documents: Going beyond simple optical character recognition (OCR) to identify and extract data from tables (with rows and cells), and forms (as key-value pairs).
+[Amazon Textract](https://docs.aws.amazon.com/textract/latest/dg/what-is.html) is a service that automatically extracts text, handwriting, and some structured data from scanned documents: Going beyond simple optical character recognition (OCR) to identify and extract data from tables (with rows and cells), and forms (as key-value pairs).
 
-In this sample we show how you can automate even highly complex and domain-specific structure extraction tasks by integrating Textract with trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/) - for additional, customizable intelligence.
+In this "Amazon Textract Transformer Pipeline" sample and accompanying [blog post](https://aws.amazon.com/blogs/machine-learning/bring-structure-to-diverse-documents-with-amazon-textract-and-transformer-based-models-on-amazon-sagemaker/), we show how you can also automate more complex and domain-specific extraction tasks by integrating trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/).
 
-We demonstrate **layout-aware entity extraction** on an example use case in finance, for which you could also consider [using Amazon Comprehend](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/). However, this pipeline provides a framework you could extend or customize for your own ML models and data.
+We demonstrate **layout-aware entity extraction** on an example use case in finance, for which you could also consider using [Amazon Comprehend's native document analysis feature](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/).
+
+However, this pipeline provides a framework you could further extend or customize for your own datasets and ML-based, OCR post-processing models.
 
 ## Background
 
 To automate document understanding for business processes, we typically need to extract and standardize specific attributes from input documents: For example vendor and line item details from purchase orders; or specific clauses within contracts.
 
-With Amazon Textract's [structure extraction utilities for forms and tables](https://aws.amazon.com/textract/features/), many of these requirements are trivial out of the box with no custom training required. For example: "pull out the text of the third column, second row of the first table on page 1", or "pull out what the customer wrote in for the `Email address:` section of the form".
+With Amazon Textract's [structure extraction utilities for forms and tables](https://aws.amazon.com/textract/features/), many of these requirements are trivial out of the box with no custom training required. For example: "pull out the text of the third column, second row of the first table on page 1", or "find what the customer wrote in for the `Email address:` section of the form".
 
-We can also use AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze extracted text. For example: picking out `date` entities on a purchase order that may not be explicitly "labelled" in the text - perhaps because sometimes the date just appears by itself in the page header. However, often these services and models treat text as a flat 1D sequence of words.
+We can also use standard text processing models or AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze extracted text. For example: picking out `date` entities on a purchase order that may not be explicitly "labelled" in the text - perhaps because sometimes the date just appears by itself in the page header. However, many standard approaches treat text as a flat 1D sequence of words.
 
 Since Textract also outputs the *positions* of each detected 'block' of text, we can even write advanced templating rules in our solution code. For example: "Find text matching XX/XX/XXXX within the top 5% of the page height".
 
@@ -61,13 +63,46 @@ By orchestrating the process through AWS Step Functions (rather than point-to-po
 
 ## Getting Started
 
-To build and deploy this solution, you'll first need to install:
+To deploy this sample you'll need access to your target AWS Account with sufficient *permissions* to deploy the various resources created by the solution (which includes IAM resources).
 
-- The [AWS CDK](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_install) (which depends on [NodeJS](https://nodejs.org/en/)).
+**Skipping local setup**
+
+Steps 0-3 below are for locally building and deploying the CDK solution and require setting up some developer-oriented tools. If you can't do this or prefer not to, you can **deploy the following "bootstrap" CloudFormation stack and skip to step 4**:
+
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/create/review?templateURL=https://s3.amazonaws.com/amazon-textract-transformer-pipeline-assets/attp-bootstrap.cfn.yaml&stackName=ATTPBootstrap "Launch Stack") (Or use [.infrastructure/attp-bootstrap.cfn.yaml](.infrastructure/attp-bootstrap.cfn.yaml))
+
+> ⚠️ **Note** before using this option:
+> - This bootstrap stack grants broad IAM permissions to the created AWS CodeBuild project role for deploying the sample - so it's **not recommended for use in production environments.**
+> - If using the 'Launch Stack' button above, remember to check it opens the Console in the correct AWS Region you want to deploy in and switch regions if necessary.
+> - Creating (or updating) the bootstrap stack will *start* the process of fetching and deploying the latest sample code, but *not wait for it to finish*. Check the AWS CodeBuild console (link in the bootstrap stack 'Outputs' tab) for build project status and you should see additional separate [CloudFormation stacks](https://console.aws.amazon.com/cloudformation/home?#/stacks) created within a few minutes.
+> - Likewise deleting the bootstrap stack will not delete the sample deployment: You can clean up by deleting the other CloudFormation stacks.
+
+The bootstrap stack pretty much runs the following steps 0-3 for you in an AWS CodeBuild environment, instead of locally on your computer:
+
+**Step 0: Local build prerequisites**
+
+To build and deploy this solution, you'll first need:
+
+- The [AWS CDK](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_install), which depends on [NodeJS](https://nodejs.org/en/).
 - [Python v3.6+](https://www.python.org/)
+- [Docker](https://www.docker.com/products/docker-desktop) installed and running (which is used for [bundling Python Lambda functions](https://docs.aws.amazon.com/cdk/api/v1/docs/aws-lambda-python-readme.html)).
+  - You can see the [discussion here](https://github.com/aws/aws-cdk/issues/16209) on using [podman](https://podman.io/) as an alternative with CDK if Docker Desktop licensing is not available for you.
 - (Optional but recommended) consider using [Poetry](https://python-poetry.org/docs/#installation) rather than Python's built-in `pip`.
 
-You'll also need to [bootstrap your CDK environment](https://docs.aws.amazon.com/cdk/latest/guide/bootstrapping.html#bootstrapping-howto) **with the modern template** (i.e. setting `CDK_NEW_BOOTSTRAP=1`, as described in the docs).
+CDK Lambda Function bundling uses container images hosted on [Amazon ECR Public](https://docs.aws.amazon.com/AmazonECR/latest/public/what-is-ecr.html), so you'll likely need to [authenticate](https://docs.aws.amazon.com/AmazonECR/latest/public/public-registries.html#public-registry-auth) to pull these. For example:
+
+```sh
+# (Always us-east-1 here, regardless of your target region)
+aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+```
+
+You'll also need to [bootstrap your AWS environment for CDK](https://docs.aws.amazon.com/cdk/latest/guide/bootstrapping.html#bootstrapping-howto) **with the modern template** if you haven't already. For example:
+
+```sh
+# Assuming your AWS CLI Account and AWS_REGION / AWS_DEFAULT_REGION are set:
+export CDK_NEW_BOOTSTRAP=1
+cdk bootstrap
+```
 
 > 🚀 **To try the solution out with your own documents and entity types:** Review the standard steps below first, but find further guidance in [CUSTOMIZATION_GUIDE.md](CUSTOMIZATION_GUIDE.md).
 
@@ -110,7 +145,7 @@ cdk deploy --all
 # To skip approval prompts, you can optionally add: --require-approval never
 ```
 
-> Note that some AWS Regions may not support all services required to run the solution, but it has been tested successfully in at least `ap-southeast-1` (Singapore) and `us-east-2` (Ohio).
+> Note that some AWS Regions may not support all services required to run the solution, but it has been tested successfully in at least `ap-southeast-1` (Singapore), `us-east-1` (N. Virginia) and `us-east-2` (Ohio).
 
 You'll be able to see the deployed stacks in the [AWS CloudFormation Console](https://console.aws.amazon.com/cloudformation/home?#/stacks).
 
