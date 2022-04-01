@@ -8,13 +8,14 @@ import os
 from typing import Union
 
 # External Dependencies:
-from aws_cdk import core as cdk
+from aws_cdk import Duration, Token
 from aws_cdk.aws_iam import Effect, PolicyStatement, Role
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
-from aws_cdk.aws_lambda_python import PythonFunction
+from aws_cdk.aws_lambda_python_alpha import PythonFunction
 import aws_cdk.aws_ssm as ssm
 import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
+from constructs import Construct
 
 
 POSTPROC_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-postprocess")
@@ -133,7 +134,7 @@ DEFAULT_ENTITY_CONFIG = [
 ]
 
 
-class LambdaPostprocStep(cdk.Construct):
+class LambdaPostprocStep(Construct):
     """CDK construct for an OCR pipeline step consolidate document fields from enriched OCR JSON
 
     This construct's `.sfn_task` expects inputs with $.Textract.Bucket and $.Textract.Key
@@ -144,10 +145,10 @@ class LambdaPostprocStep(cdk.Construct):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         lambda_role: Role,
-        ssm_param_prefix: Union[cdk.Token, str],
+        ssm_param_prefix: Union[Token, str],
         **kwargs,
     ):
         super().__init__(scope, id, **kwargs)
@@ -183,7 +184,7 @@ class LambdaPostprocStep(cdk.Construct):
             memory_size=256,
             role=lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=cdk.Duration.seconds(60),
+            timeout=Duration.seconds(60),
         )
 
         self.sfn_task = sfn_tasks.LambdaInvoke(

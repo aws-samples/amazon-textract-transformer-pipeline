@@ -8,7 +8,7 @@ with open("README.md") as fp:
 
 setuptools.setup(
     name="amazon-textract-transformer-pipeline",
-    version="0.1.0",
+    version="0.2.0",
 
     description="Post-processing Amazon Textract with Transformer-Based Models on Amazon SageMaker",
     long_description=long_description,
@@ -19,15 +19,8 @@ setuptools.setup(
     packages=["annotation", "pipeline"],
 
     install_requires=[
-        "aws-cdk.aws-codepipeline==^1.119",
-        "aws-cdk.aws-dynamodb==^1.119",
-        "aws-cdk.aws-events-targets==^1.119",
-        "aws-cdk.aws-lambda-python==^1.119",
-        "aws-cdk.aws-s3-notifications==^1.119",
-        "aws-cdk.aws-ssm==^1.119",
-        "aws-cdk.aws-stepfunctions==^1.119",
-        "aws-cdk.aws-stepfunctions-tasks==^1.119",
-        "aws-cdk.core==^1.119",
+        "aws-cdk-lib==2.18.0",
+        "aws-cdk.aws-lambda-python-alpha==2.18.0-alpha.0",
         "boto3==^1.17.92",
     ],
     extras_require={
