@@ -5,12 +5,12 @@
 """
 
 # External Dependencies:
-from aws_cdk import core as cdk
+from aws_cdk import App
 
 # Local Dependencies:
 from cdk_demo_stack import PipelineDemoStack
 
 
-app = cdk.App()
+app = App()
 demo_stack = PipelineDemoStack(app, "OCRPipelineDemo", default_project_id="ocr-transformers-demo")
 app.synth()

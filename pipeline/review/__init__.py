@@ -7,22 +7,23 @@ import os
 from typing import Union
 
 # External Dependencies:
-from aws_cdk import core as cdk
+from aws_cdk import Duration, Stack, Token
 from aws_cdk.aws_iam import Effect, PolicyStatement, Role, ServicePrincipal
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
-from aws_cdk.aws_lambda_python import PythonFunction
+from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from aws_cdk.aws_s3 import Bucket, EventType
 import aws_cdk.aws_s3_notifications as s3n
 import aws_cdk.aws_ssm as ssm
 import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
+from constructs import Construct
 
 
 START_REVIEW_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-start-review")
 REVIEW_CALLBACK_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-review-callback")
 
 
-class A2IReviewStep(cdk.Construct):
+class A2IReviewStep(Construct):
     """CDK construct for an OCR pipeline step to have humans review extracted document fields
 
     This construct's `.sfn_task` expects inputs with a $.ModelResult object and an input document
@@ -33,12 +34,12 @@ class A2IReviewStep(cdk.Construct):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         lambda_role: Role,
         input_bucket: Bucket,
         reviews_bucket: Bucket,
-        ssm_param_prefix: Union[cdk.Token, str],
+        ssm_param_prefix: Union[Token, str],
         **kwargs,
     ):
         super().__init__(scope, id, **kwargs)
@@ -82,7 +83,7 @@ class A2IReviewStep(cdk.Construct):
             memory_size=128,
             role=lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=cdk.Duration.seconds(10),
+            timeout=Duration.seconds(10),
         )
         self.callback_lambda = PythonFunction(
             self,
@@ -94,7 +95,7 @@ class A2IReviewStep(cdk.Construct):
             memory_size=128,
             role=lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=cdk.Duration.seconds(60),
+            timeout=Duration.seconds(60),
         )
         self.a2i_role = Role(
             self,
@@ -107,7 +108,7 @@ class A2IReviewStep(cdk.Construct):
         Bucket.from_bucket_arn(
             self,
             "SageMakerDefaultBucket",
-            f"arn:aws:s3:::sagemaker-{cdk.Stack.of(self).region}-{cdk.Stack.of(self).account}",
+            f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
         ).grant_read_write(self.a2i_role)
 
         reviews_bucket.add_event_notification(
@@ -133,5 +134,5 @@ class A2IReviewStep(cdk.Construct):
                 }
             ),
             result_path="$.ModelResult",
-            timeout=cdk.Duration.minutes(20),
+            timeout=Duration.minutes(20),
         )

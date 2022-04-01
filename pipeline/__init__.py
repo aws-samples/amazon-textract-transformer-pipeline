@@ -7,7 +7,7 @@ import os
 from typing import List, Union
 
 # External Dependencies:
-from aws_cdk import core as cdk
+from aws_cdk import Duration, Fn, RemovalPolicy, Stack, Token
 from aws_cdk.aws_iam import (
     Effect,
     ManagedPolicy,
@@ -16,11 +16,12 @@ from aws_cdk.aws_iam import (
     ServicePrincipal,
 )
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
-from aws_cdk.aws_lambda_python import PythonFunction
+from aws_cdk.aws_lambda_python_alpha import PythonFunction
 import aws_cdk.aws_s3 as s3
 import aws_cdk.aws_s3_notifications as s3n
 import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_ssm as ssm
+from constructs import Construct
 
 # Local Dependencies:
 from .enrichment import SageMakerEnrichmentStep
@@ -36,7 +37,7 @@ from .review import A2IReviewStep
 S3_TRIGGER_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-trigger")
 
 
-class ProcessingPipeline(cdk.Construct):
+class ProcessingPipeline(Construct):
     """CDK construct for an OCR pipeline with field post-processing and human review
 
     This is the main top-level construct for the sample solution, implementing an AWS Step
@@ -45,28 +46,28 @@ class ProcessingPipeline(cdk.Construct):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         input_bucket: s3.Bucket,
-        ssm_param_prefix: Union[cdk.Token, str],
+        ssm_param_prefix: Union[Token, str],
         **kwargs,
     ):
         """Create a ProcessingPipeline
 
         Arguments
         ---------
-        scope : cdk.Construct
+        scope : Construct
             CDK construct scope
         id : str
             CDK construct ID
         input_bucket : aws_cdk.aws_s3.Bucket
             The raw input bucket, to which this pipeline will attach and listen for documents being
             uploaded.
-        ssm_param_prefix : Union[aws_cdk.core.Token, str]
+        ssm_param_prefix : Union[aws_cdk.Token, str]
             A prefix to apply to generated AWS SSM Parameter Store configuration parameter names,
             to help keep the account tidy. Should begin and end with a forward slash.
         **kwargs : Any
-            Passed through to parent cdk.Construct
+            Passed through to parent Construct
         """
         super().__init__(scope, id, **kwargs)
 
@@ -83,8 +84,8 @@ class ProcessingPipeline(cdk.Construct):
             ),
             encryption=s3.BucketEncryption.S3_MANAGED,
             enforce_ssl=True,
-            lifecycle_rules=[s3.LifecycleRule(enabled=True, expiration=cdk.Duration.days(7))],
-            removal_policy=cdk.RemovalPolicy.DESTROY,
+            lifecycle_rules=[s3.LifecycleRule(enabled=True, expiration=Duration.days(7))],
+            removal_policy=RemovalPolicy.DESTROY,
         )
         self.enriched_results_bucket = s3.Bucket(
             self,
@@ -98,8 +99,8 @@ class ProcessingPipeline(cdk.Construct):
             ),
             encryption=s3.BucketEncryption.S3_MANAGED,
             enforce_ssl=True,
-            lifecycle_rules=[s3.LifecycleRule(enabled=True, expiration=cdk.Duration.days(7))],
-            removal_policy=cdk.RemovalPolicy.DESTROY,
+            lifecycle_rules=[s3.LifecycleRule(enabled=True, expiration=Duration.days(7))],
+            removal_policy=RemovalPolicy.DESTROY,
         )
         self.human_reviews_bucket = s3.Bucket(
             self,
@@ -113,8 +114,8 @@ class ProcessingPipeline(cdk.Construct):
             ),
             encryption=s3.BucketEncryption.S3_MANAGED,
             enforce_ssl=True,
-            lifecycle_rules=[s3.LifecycleRule(enabled=True, expiration=cdk.Duration.days(7))],
-            removal_policy=cdk.RemovalPolicy.DESTROY,
+            lifecycle_rules=[s3.LifecycleRule(enabled=True, expiration=Duration.days(7))],
+            removal_policy=RemovalPolicy.DESTROY,
         )
 
         self.shared_lambda_role = Role(
@@ -136,7 +137,7 @@ class ProcessingPipeline(cdk.Construct):
         s3.Bucket.from_bucket_arn(
             self,
             "SageMakerDefaultBucket",
-            f"arn:aws:s3:::sagemaker-{cdk.Stack.of(self).region}-{cdk.Stack.of(self).account}",
+            f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
         ).grant_read_write(self.shared_lambda_role)
 
         self.ocr_step = TextractOcrStep(
@@ -192,7 +193,7 @@ class ProcessingPipeline(cdk.Construct):
             "ProcessingPipelineStateMachine",
             definition=definition,
             state_machine_type=sfn.StateMachineType.STANDARD,
-            timeout=cdk.Duration.minutes(20),
+            timeout=Duration.minutes(20),
         )
         self.shared_lambda_role.add_to_policy(
             PolicyStatement(
@@ -232,12 +233,12 @@ class ProcessingPipeline(cdk.Construct):
             memory_size=128,
             role=self.trigger_lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=cdk.Duration.seconds(15),
+            timeout=Duration.seconds(15),
         )
         self.trigger_lambda.add_permission(
             "S3BucketNotification",
             action="lambda:InvokeFunction",
-            source_account=cdk.Fn.sub("${AWS::AccountId}"),
+            source_account=Fn.sub("${AWS::AccountId}"),
             principal=ServicePrincipal("s3.amazonaws.com"),
         )
         self.input_bucket.add_event_notification(

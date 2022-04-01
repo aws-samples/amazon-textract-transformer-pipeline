@@ -22,20 +22,21 @@ import os
 from typing import Optional
 
 # External Dependencies:
-from aws_cdk import core as cdk
+from aws_cdk import Duration, RemovalPolicy
 import aws_cdk.aws_dynamodb as dynamodb
 import aws_cdk.aws_events as aws_events
 import aws_cdk.aws_events_targets as events_targets
 from aws_cdk.aws_iam import ServicePrincipal
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
-from aws_cdk.aws_lambda_python import PythonFunction
+from aws_cdk.aws_lambda_python_alpha import PythonFunction
 import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
+from constructs import Construct
 
 TPS_ACQUIRER_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-acquire-lock")
 
 
-class SFnSemaphoreCleanUpChain(cdk.Construct):
+class SFnSemaphoreCleanUpChain(Construct):
     """Pseudo-chain to clean up an unused SFnSemaphore for a particular execution ID
 
     Expects inputs with properties:
@@ -49,7 +50,7 @@ class SFnSemaphoreCleanUpChain(cdk.Construct):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         ddb_lock_table: dynamodb.Table,
         lock_id_attr: str,
@@ -85,7 +86,7 @@ class SFnSemaphoreCleanUpChain(cdk.Construct):
         self._start_state.add_retry(
             backoff_rate=1.4,
             errors=["States.ALL"],
-            interval=cdk.Duration.seconds(5),
+            interval=Duration.seconds(5),
             max_attempts=20,
         )
 
@@ -131,7 +132,7 @@ class SFnSemaphoreCleanUpChain(cdk.Construct):
         self.clean_up_lock_state.add_retry(
             backoff_rate=1.8,
             errors=["States.ALL"],
-            interval=cdk.Duration.seconds(5),
+            interval=Duration.seconds(5),
             max_attempts=15,
         )
 
@@ -177,7 +178,7 @@ class SFnSemaphoreCleanUpChain(cdk.Construct):
         return self._end_states
 
 
-class SFnSemaphoreReaper(cdk.Construct):
+class SFnSemaphoreReaper(Construct):
     """A SFn state machine to clean up leaked locks from failed executions in SFnSemaphores
 
     One reaper may serve multiple state machines / SFnSemaphores. See .attach()
@@ -185,7 +186,7 @@ class SFnSemaphoreReaper(cdk.Construct):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         ddb_lock_table: dynamodb.Table,
         lock_id_attr: str,
@@ -210,7 +211,7 @@ class SFnSemaphoreReaper(cdk.Construct):
             "SemaphoreCleanUpMachine",
             definition=self.cleanup_chain.next(success),
             state_machine_type=sfn.StateMachineType.STANDARD,
-            timeout=cdk.Duration.minutes(20),
+            timeout=Duration.minutes(20),
         )
 
     def attach(
@@ -260,11 +261,11 @@ class SFnSemaphoreDynamoDbTable(dynamodb.Table):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         lock_id_attr: str,
         billing_mode: dynamodb.BillingMode = dynamodb.BillingMode.PAY_PER_REQUEST,
-        removal_policy: cdk.RemovalPolicy = cdk.RemovalPolicy.DESTROY,
+        removal_policy: RemovalPolicy = RemovalPolicy.DESTROY,
         **kwargs,
     ):
         super().__init__(
@@ -285,7 +286,7 @@ class SFnSemaphoreDynamoDbTable(dynamodb.Table):
         return self._lock_id_attr
 
 
-class SFnSemaphoreLockAcquirer(cdk.Construct):
+class SFnSemaphoreLockAcquirer(Construct):
     """Pseudo-chain to acquire a lock for SFnSemaphore
 
     Uses a custom Lambda function if warmup_tps_limit is configured, else pure Step Functions.
@@ -293,7 +294,7 @@ class SFnSemaphoreLockAcquirer(cdk.Construct):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         ddb_lock_table: dynamodb.Table,
         lock_id_attr: str,
@@ -316,7 +317,7 @@ class SFnSemaphoreLockAcquirer(cdk.Construct):
                 handler="handler",
                 memory_size=128,
                 runtime=LambdaRuntime.PYTHON_3_8,
-                timeout=cdk.Duration.seconds(60),
+                timeout=Duration.seconds(60),
             )
             # (Read is required as well as write, for the item existence check when using Lambda)
             ddb_lock_table.grant_read_write_data(self.acq_lambda)
@@ -381,7 +382,7 @@ class SFnSemaphoreLockAcquirer(cdk.Construct):
         self.acquire_lock_state.add_retry(
             backoff_rate=2.0,
             errors=["States.ALL"],
-            interval=cdk.Duration.seconds(2),
+            interval=Duration.seconds(2),
             max_attempts=6,
         )
 
@@ -472,7 +473,7 @@ class SFnSemaphoreLockAcquirer(cdk.Construct):
                 "If the lock indeed not been succesfully Acquired, then wait a while before "
                 "trying again (in case of rate limits, etc)."
             ),
-            time=sfn.WaitTime.duration(cdk.Duration.seconds(5)),
+            time=sfn.WaitTime.duration(Duration.seconds(5)),
         )
         self.wait_to_get_lock_state.next(self.acquire_lock_state)
         if warmup_tps_limit:
@@ -512,7 +513,7 @@ class SfnSemaphoreLockReleaseState(sfn_tasks.DynamoUpdateItem):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         table: dynamodb.ITable,
         lock_id_attr: str,
@@ -553,7 +554,7 @@ class SfnSemaphoreLockReleaseState(sfn_tasks.DynamoUpdateItem):
         )
 
 
-class SFnSemaphore(cdk.Construct):
+class SFnSemaphore(Construct):
     """Construct using a DynamoDB semaphore pattern to limit concurrency in Step Functions graphs
 
     Wraps a chain of work states to initially acquire (or wait for) a concurrency lock, and then
@@ -567,7 +568,7 @@ class SFnSemaphore(cdk.Construct):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         workchain: sfn.IChainable,
         ddb_lock_table: dynamodb.Table,
@@ -582,7 +583,7 @@ class SFnSemaphore(cdk.Construct):
 
         Arguments
         ---------
-        scope : cdk.Construct
+        scope : Construct
             CDK construct scope
         id : str
             CDK construct ID
@@ -601,7 +602,7 @@ class SFnSemaphore(cdk.Construct):
         warmup_tps_limit : Optional[float]
             Optional limit for time between lock grants, in grants per second.
         **kwargs :
-            Passed through to parent cdk.Construct class
+            Passed through to parent Construct class
         """
         super().__init__(scope, id, **kwargs)
 

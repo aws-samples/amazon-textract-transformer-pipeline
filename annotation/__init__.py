@@ -10,7 +10,7 @@ import os
 from typing import List
 
 # External Dependencies:
-from aws_cdk import core as cdk
+from aws_cdk import Duration, Stack
 from aws_cdk.aws_iam import (
     Effect,
     ManagedPolicy,
@@ -20,18 +20,19 @@ from aws_cdk.aws_iam import (
     ServicePrincipal,
 )
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
-from aws_cdk.aws_lambda_python import PythonFunction
+from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from aws_cdk.aws_s3 import Bucket
+from constructs import Construct
 
 
 PRE_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-SMGT-Pre")
 POST_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-SMGT-Post")
 
 
-class AnnotationInfra(cdk.Construct):
+class AnnotationInfra(Construct):
     """CDK construct for custom SageMaker Ground Truth annotation task infrastructure"""
 
-    def __init__(self, scope: cdk.Construct, id: str, **kwargs):
+    def __init__(self, scope: Construct, id: str, **kwargs):
         super().__init__(scope, id, **kwargs)
 
         self.sm_image_build_role = Role(
@@ -183,7 +184,7 @@ class AnnotationInfra(cdk.Construct):
         Bucket.from_bucket_arn(
             self,
             "SageMakerDefaultBucket",
-            f"arn:aws:s3:::sagemaker-{cdk.Stack.of(self).region}-{cdk.Stack.of(self).account}",
+            f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
         ).grant_read_write(self.lambda_role)
 
         self._pre_lambda = PythonFunction(
@@ -198,7 +199,7 @@ class AnnotationInfra(cdk.Construct):
             memory_size=128,
             role=self.lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=cdk.Duration.seconds(5),
+            timeout=Duration.seconds(5),
         )
         self._post_lambda = PythonFunction(
             self,
@@ -209,7 +210,7 @@ class AnnotationInfra(cdk.Construct):
             memory_size=128,
             role=self.lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=cdk.Duration.seconds(60),
+            timeout=Duration.seconds(60),
         )
 
     @property
