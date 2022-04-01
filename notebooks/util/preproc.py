@@ -329,7 +329,7 @@ def find_cleaned_page_imgs_by_textract_uri(
             map(
                 lambda o: o.key,
                 filter(
-                    lambda o: PDF2IMAGE_REGEX.match(o.key[len(file_img_s3key_prefix):]),
+                    lambda o: PDF2IMAGE_REGEX.match(o.key[len(file_img_s3key_prefix) :]),
                     raw_candidate_objs,
                 ),
             )
@@ -344,21 +344,18 @@ def find_cleaned_page_imgs_by_textract_uri(
         # Could be a single-page (e.g. PNG) or multi-page (e.g. TIFF) image:
         raw_candidate_s3keys = [o.key for o in raw_candidate_objs]
         regex_matches = [
-            NONPDF_REGEX.match(k[len(file_img_s3key_prefix):])
-            for k in raw_candidate_s3keys
+            NONPDF_REGEX.match(k[len(file_img_s3key_prefix) :]) for k in raw_candidate_s3keys
         ]
-        
+
         img_candidate_s3keys = [
-            raw_candidate_s3keys[ix]
-            for ix in range(len(regex_matches))
-            if regex_matches[ix]
+            raw_candidate_s3keys[ix] for ix in range(len(regex_matches)) if regex_matches[ix]
         ]
-        
+
         if len(img_candidate_s3keys) == 1:
             img_candidate_pagenums = [1]
         else:
             img_candidate_pagenums = [int(match.group(1)) for match in regex_matches if match]
-    
+
     return img_candidate_s3keys, img_candidate_pagenums
 
 
