@@ -83,9 +83,9 @@ The bootstrap stack pretty much runs the following steps 0-3 for you in an AWS C
 
 To build and deploy this solution, you'll first need:
 
-- The [AWS CDK](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_install), which depends on [NodeJS](https://nodejs.org/en/).
+- The [AWS CDK (v2)](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_install), which depends on [NodeJS](https://nodejs.org/en/).
 - [Python v3.6+](https://www.python.org/)
-- [Docker](https://www.docker.com/products/docker-desktop) installed and running (which is used for [bundling Python Lambda functions](https://docs.aws.amazon.com/cdk/api/v1/docs/aws-lambda-python-readme.html)).
+- [Docker](https://www.docker.com/products/docker-desktop) installed and running (which is used for [bundling Python Lambda functions](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-lambda-python-alpha-readme.html)).
   - You can see the [discussion here](https://github.com/aws/aws-cdk/issues/16209) on using [podman](https://podman.io/) as an alternative with CDK if Docker Desktop licensing is not available for you.
 - (Optional but recommended) consider using [Poetry](https://python-poetry.org/docs/#installation) rather than Python's built-in `pip`.
 

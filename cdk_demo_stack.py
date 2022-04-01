@@ -4,13 +4,14 @@
 """
 
 # External Dependencies:
-from aws_cdk import core as cdk
+from aws_cdk import CfnOutput, CfnParameter, Duration, RemovalPolicy, Stack
 from aws_cdk.aws_iam import (
     ManagedPolicy,
     PolicyDocument,
 )
 import aws_cdk.aws_s3 as s3
 import aws_cdk.aws_ssm as ssm
+from constructs import Construct
 
 # Local Dependencies:
 from annotation import AnnotationInfra
@@ -22,7 +23,7 @@ from pipeline.iam_utils import (
 )
 
 
-class PipelineDemoStack(cdk.Stack):
+class PipelineDemoStack(Stack):
     """Deployable CDK stack bundling the core OCR pipeline construct with supporting demo resources
 
     This stack bundles the core ProcessingPipeline construct with the additional resources required
@@ -35,14 +36,14 @@ class PipelineDemoStack(cdk.Stack):
     """
 
     def __init__(
-        self, scope: cdk.Construct, construct_id: str, default_project_id: str, **kwargs
+        self, scope: Construct, construct_id: str, default_project_id: str, **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         # Could consider just directly using the stack ID for this, but then if you were to vend
         # the stack through e.g. AWS Service Catalog you may not have control over setting a nice
         # readable stack ID:
-        self.project_id_param = cdk.CfnParameter(
+        self.project_id_param = CfnParameter(
             self,
             "ProjectId",
             allowed_pattern=r"[a-zA-Z0-9]+(\-[a-zA-Z0-9]+)*",
@@ -71,9 +72,9 @@ class PipelineDemoStack(cdk.Stack):
             encryption=s3.BucketEncryption.S3_MANAGED,
             enforce_ssl=True,
             lifecycle_rules=[
-                s3.LifecycleRule(enabled=True, expiration=cdk.Duration.days(7)),
+                s3.LifecycleRule(enabled=True, expiration=Duration.days(7)),
             ],
-            removal_policy=cdk.RemovalPolicy.DESTROY,
+            removal_policy=RemovalPolicy.DESTROY,
             cors=[
                 # CORS permissions are required for the A2I human review UI to retrieve objects:
                 s3.CorsRule(
@@ -119,7 +120,7 @@ class PipelineDemoStack(cdk.Stack):
         # rather than in the lower-level constructs will keep the constructs flexible/reusable.
         #
         # We override the auto-generated logical IDs to make the names simple to find in console.
-        self.data_science_policy_output = cdk.CfnOutput(
+        self.data_science_policy_output = CfnOutput(
             self,
             "DataSciencePolicyName",
             description=(
@@ -129,35 +130,35 @@ class PipelineDemoStack(cdk.Stack):
             value=self.data_science_policy.managed_policy_name,
         )
         self.data_science_policy_output.override_logical_id("DataSciencePolicyName")
-        self.input_bucket_name_output = cdk.CfnOutput(
+        self.input_bucket_name_output = CfnOutput(
             self,
             "InputBucketName",
             description="Name of the S3 bucket to which input documents should be uploaded",
             value=self.pipeline.input_bucket.bucket_name,
         )
         self.input_bucket_name_output.override_logical_id("InputBucketName")
-        self.pipeline_statemachine_output = cdk.CfnOutput(
+        self.pipeline_statemachine_output = CfnOutput(
             self,
             "PipelineStateMachine",
             description="ARN of the State Machine for the end-to-end OCR pipeline",
             value=self.pipeline.state_machine.state_machine_arn,
         )
         self.pipeline_statemachine_output.override_logical_id("PipelineStateMachine")
-        self.textract_statemachine_output = cdk.CfnOutput(
+        self.textract_statemachine_output = CfnOutput(
             self,
             "PlainTextractStateMachine",
             description="ARN of the State Machine for *only* running Textract (no enrichments)",
             value=self.pipeline.plain_textract_state_machine.state_machine_arn,
         )
         self.textract_statemachine_output.override_logical_id("PlainTextractStateMachine")
-        self.model_param_output = cdk.CfnOutput(
+        self.model_param_output = CfnOutput(
             self,
             "SageMakerEndpointParamName",
             description="SSM parameter to configure the pipeline's SageMaker endpoint name",
             value=self.pipeline.sagemaker_model_param.parameter_name,
         )
         self.model_param_output.override_logical_id("SageMakerEndpointParamName")
-        self.entity_config_param_output = cdk.CfnOutput(
+        self.entity_config_param_output = CfnOutput(
             self,
             "EntityConfigParamName",
             description=(
@@ -166,21 +167,21 @@ class PipelineDemoStack(cdk.Stack):
             value=self.pipeline.entity_config_param.parameter_name,
         )
         self.entity_config_param_output.override_logical_id("EntityConfigParamName")
-        self.a2i_role_arn_output = cdk.CfnOutput(
+        self.a2i_role_arn_output = CfnOutput(
             self,
             "A2IHumanReviewExecutionRoleArn",
             description="ARN of the execution Role to use for Amazon A2I human review workflows",
             value=self.pipeline.review_a2i_role.role_arn,
         )
         self.a2i_role_arn_output.override_logical_id("A2IHumanReviewExecutionRoleArn")
-        self.workflow_param_output = cdk.CfnOutput(
+        self.workflow_param_output = CfnOutput(
             self,
             "A2IHumanReviewFlowParamName",
             description="SSM parameter to configure the pipeline's A2I review workflow ARN",
             value=self.pipeline.review_workflow_param.parameter_name,
         )
         self.workflow_param_output.override_logical_id("A2IHumanReviewFlowParamName")
-        self.reviews_bucket_name_output = cdk.CfnOutput(
+        self.reviews_bucket_name_output = CfnOutput(
             self,
             "A2IHumanReviewBucketName",
             description="Name of the S3 bucket to which A2I reviews should be stored",

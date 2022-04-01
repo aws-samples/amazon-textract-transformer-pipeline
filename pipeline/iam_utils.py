@@ -13,10 +13,8 @@ from itertools import zip_longest
 from typing import Iterable, Union
 
 # External Dependencies:
-from aws_cdk import core as cdk
-from aws_cdk.aws_iam import (
-    PolicyStatement,
-)
+from aws_cdk import Stack
+from aws_cdk.aws_iam import PolicyStatement
 from aws_cdk.aws_s3 import Bucket
 from aws_cdk.aws_ssm import IParameter
 from aws_cdk.aws_stepfunctions import StateMachine
@@ -161,9 +159,9 @@ class StateMachineExecuteStatement(PolicyStatement):
             resources=[m.state_machine_arn for m in resources]
             + [
                 "arn:{}:states:{}:{}:execution:{}:*".format(
-                    cdk.Stack.of(m).partition,
-                    cdk.Stack.of(m).region,
-                    cdk.Stack.of(m).account,
+                    Stack.of(m).partition,
+                    Stack.of(m).region,
+                    Stack.of(m).account,
                     m.state_machine_name,
                 )
                 for m in resources

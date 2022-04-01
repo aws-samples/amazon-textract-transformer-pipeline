@@ -6,15 +6,16 @@
 import os
 
 # External Dependencies:
-from aws_cdk import core as cdk
+from aws_cdk import Duration
 import aws_cdk.aws_dynamodb as dynamodb
 from aws_cdk.aws_iam import Effect, PolicyDocument, PolicyStatement, Role, ServicePrincipal
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
-from aws_cdk.aws_lambda_python import PythonFunction
+from aws_cdk.aws_lambda_python_alpha import PythonFunction
 import aws_cdk.aws_sns as sns
 import aws_cdk.aws_sns_subscriptions as subs
 import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
+from constructs import Construct
 
 # Local Dependencies:
 from . import sfn_semaphore
@@ -23,7 +24,7 @@ from . import sfn_semaphore
 TEXTRACT_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-call-textract")
 
 
-class TextractOcrStep(cdk.Construct):
+class TextractOcrStep(Construct):
     """CDK Construct for a concurrency- & TPS-limiting Textract OCR step in a Step Function
 
     This construct's `.sfn_task` expects inputs with $.Input.Bucket and $.Input.Key properties
@@ -33,20 +34,20 @@ class TextractOcrStep(cdk.Construct):
 
     def __init__(
         self,
-        scope: cdk.Construct,
+        scope: Construct,
         id: str,
         lambda_role: Role,
         concurrency_limit: int = 90,
         warmup_tps_limit: float = 2,
-        timeout_excluding_queue: cdk.Duration = cdk.Duration.minutes(12),
-        timeout_including_queue: cdk.Duration = cdk.Duration.minutes(30),
+        timeout_excluding_queue: Duration = Duration.minutes(12),
+        timeout_including_queue: Duration = Duration.minutes(30),
         **kwargs,
     ):
         """Create a TextractOcrStep
 
         Arguments
         ---------
-        scope : cdk.Construct
+        scope : Construct
             CDK construct scope
         id : str
             CDK construct ID
@@ -66,9 +67,9 @@ class TextractOcrStep(cdk.Construct):
             Maximum number of Textract jobs which may be in-progress at a time. Additional requests
             will be pooled for retry via AWS Step Functions (order not guaranteed). Refer to your
             account & region's Amazon Textract quotas to set. Default 100.
-        timeout_excluding_queue : cdk.Duration
+        timeout_excluding_queue : aws_cdk.Duration
             Timeout for the Textract processing job itself to be considered as failed. Default 10m.
-        timeout_including_queue : cdk.Duration
+        timeout_including_queue : aws_cdk.Duration
             Timeout for the end-to-end step (including concurrency management / queuing) to be
             considered as failed. Default 20m.
         """
@@ -148,7 +149,7 @@ class TextractOcrStep(cdk.Construct):
             memory_size=128,
             role=lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=cdk.Duration.seconds(60),
+            timeout=Duration.seconds(60),
         )
         self.sns_topic.add_subscription(subs.LambdaSubscription(self.caller_lambda))
 
