@@ -4,7 +4,7 @@
 """
 # Python Built-Ins:
 import os
-from typing import List, Union
+from typing import List, Optional, Union
 
 # External Dependencies:
 from aws_cdk import Duration, Fn, RemovalPolicy, Stack, Token
@@ -20,6 +20,7 @@ from aws_cdk.aws_lambda_python_alpha import PythonFunction
 import aws_cdk.aws_s3 as s3
 import aws_cdk.aws_s3_notifications as s3n
 import aws_cdk.aws_stepfunctions as sfn
+import aws_cdk.aws_sns as sns
 import aws_cdk.aws_ssm as ssm
 from constructs import Construct
 
@@ -257,6 +258,12 @@ class ProcessingPipeline(Construct):
         return self.enrichment_step.model_param
 
     @property
+    def sagemaker_sns_topic(self) -> Optional[sns.Topic]:
+        """SNS topic that async SageMaker endpoints should use for callback, or None if not enabled
+        """
+        return self.enrichment_step.async_notify_topic
+
+    @property
     def entity_config_param(self) -> ssm.StringParameter:
         """SSM parameter defining the entity types configuration for rule-based post-processing"""
         return self.postprocessing_step.entity_config_param
@@ -351,4 +358,4 @@ class ProcessingPipeline(Construct):
                 resources=[self.enriched_results_bucket],
                 sid=None if sid_prefix is None else (sid_prefix + "ReadWriteEnrichedBucket"),
             ),
-        ]
+        ] + self.enrichment_step.sagemaker_sns_statements()

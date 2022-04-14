@@ -239,6 +239,32 @@ class PipelineDemoStack(Stack):
             ),
             simple_name=False,
         )
+        self.enrichment_results_bucket_ssm_param = ssm.StringParameter(
+            self,
+            "EnrichmentModelResultsBucketSSMParam",
+            description=(
+                "Name of the S3 bucket to which SageMaker (async) model results should be stored"
+            ),
+            parameter_name=(
+                f"/{self.project_id_param.value_as_string}/static/ModelResultsBucket"
+            ),
+            simple_name=False,
+            string_value=self.pipeline.enriched_results_bucket.bucket_name,
+        )
+        self.enrichment_callback_topic_ssm_param = ssm.StringParameter(
+            self,
+            "EnrichmentModelCallbackTopicSSMParam",
+            description="ARN of the SNS Topic to use for callback in SageMaker Async Inference",
+            parameter_name=(
+                f"/{self.project_id_param.value_as_string}/static/ModelCallbackTopicArn"
+            ),
+            simple_name=False,
+            string_value=(
+                self.pipeline.sagemaker_sns_topic.topic_arn
+                if self.pipeline.sagemaker_sns_topic
+                else "undefined"
+            ),
+        )
         self.a2i_role_arn_param = ssm.StringParameter(
             self,
             "A2IExecutionRoleArnParam",
@@ -256,6 +282,8 @@ class PipelineDemoStack(Stack):
                     self.reviews_bucket_ssm_param,
                     self.pipeline_statemachine_ssm_param,
                     self.textract_statemachine_ssm_param,
+                    self.enrichment_callback_topic_ssm_param,
+                    self.enrichment_results_bucket_ssm_param,
                     self.a2i_role_arn_param,
                 ],
                 sid="ReadStaticPipelineParams",

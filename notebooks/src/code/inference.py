@@ -66,16 +66,16 @@ class S3ObjectSpec:
     """Utility class for parsing an S3 location spec from a JSON-able dict"""
 
     def __init__(self, spec: dict):
-        if "URI" in spec:
-            if not spec["URI"].lower().startswith("s3://"):
-                raise ValueError("URI must be a valid 's3://...' URI if provided")
-            bucket, _, key = spec["URI"][len("s3://") :].partition("/")
+        if "S3Uri" in spec:
+            if not spec["S3Uri"].lower().startswith("s3://"):
+                raise ValueError("S3Uri must be a valid 's3://...' URI if provided")
+            bucket, _, key = spec["S3Uri"][len("s3://") :].partition("/")
         else:
             bucket = spec.get("Bucket")
             key = spec.get("Key")
         if not (bucket and key and isinstance(bucket, str) and isinstance(key, str)):
             raise ValueError(
-                "Must provide an object with either 'URI' or 'Bucket' and 'Key' properties. "
+                "Must provide an object with either 'S3Uri' or 'Bucket' and 'Key' properties. "
                 f"Parsed bucket={bucket}, key={key}"
             )
         self.bucket = bucket
@@ -132,7 +132,7 @@ def input_fn(input_bytes, content_type: str):
             s3_input = S3ObjectSpec(s3_input)
         except ValueError as e:
             raise ValueError(
-                "Invalid Request.S3Input: If provided, must be an object with 'URI' or 'Bucket' "
+                "Invalid Request.S3Input: If provided, must be an object with 'S3Uri' or 'Bucket' "
                 "and 'Key'"
             ) from e
         logger.info(f"Fetching S3Input from s3://{s3_input.bucket}/{s3_input.key}")
