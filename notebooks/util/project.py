@@ -47,6 +47,8 @@ class ProjectSession:
         "static/InputBucket": "pipeline_input_bucket_name",
         "static/ReviewsBucket": "pipeline_reviews_bucket_name",
         "static/PipelineStateMachine": "pipeline_sfn_arn",
+        "static/ModelCallbackTopicArn": "model_callback_topic_arn",
+        "static/ModelResultsBucket": "model_results_bucket",
         "static/SMDockerBuildRole": "sm_image_build_role",
     }
     DYNAMIC_PARAM_NAMES: Dict[str, str] = {
@@ -61,6 +63,8 @@ class ProjectSession:
     pipeline_reviews_bucket_name: str
     pipeline_sfn_arn: str
     plain_textract_sfn_arn: str
+    model_callback_topic_arn: str
+    model_results_bucket: str
     sm_image_build_role: str
     # Configurable parameters (names in SSM):
     a2i_review_flow_arn_param: str
