@@ -94,9 +94,10 @@ class AnnotationInfra(Construct):
                             ],
                             effect=Effect.ALLOW,
                             resources=[
-                                # We'll only allow a specific repo name, rather than any default:
-                                # "arn:aws:ecr:*:*:repository/sagemaker-studio*",
-                                "arn:aws:ecr:*:*:repository/sm-scikit-ocrtools",
+                                # We'll only allow specific repo name(s), but a range in case users
+                                # want to experiment with additional custom containers e.g. train,
+                                # inference:
+                                "arn:aws:ecr:*:*:repository/sm-ocr-*",
                             ],
                         ),
                         PolicyStatement(
