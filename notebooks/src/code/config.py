@@ -14,6 +14,24 @@ from transformers import HfArgumentParser, TrainingArguments
 from transformers.trainer_utils import IntervalStrategy
 
 
+def get_default_num_workers():
+    """Choose a sensible default dataloader_num_workers based on available hardware"""
+    n_cpus = int(os.environ.get("SM_NUM_CPUS", len(os.sched_getaffinity(0))))
+    n_gpus = int(os.environ.get("SM_NUM_GPUS", 0))
+    # Don't create so many workers you lock all processes into resource contention:
+    max_workers = max(0, n_cpus - 2)
+    if n_gpus:
+        # Don't create unnecessarily high numbers of workers per GPU:
+        # (Which can cause CUDAOutOfMemory e.g. on p3.16xlarge, or RAM exhaustion with SageMaker
+        # Training Compiler)
+        max_workers = min(
+            max_workers,
+            max(8, n_gpus * 4),
+        )
+
+    return max(0, max_workers)
+
+
 @dataclass
 class SageMakerTrainingArguments(TrainingArguments):
     """Overrides & extensions to HF's CLI TrainingArguments for training LayoutLM on SageMaker
@@ -23,7 +41,7 @@ class SageMakerTrainingArguments(TrainingArguments):
 
     dataloader_num_workers: int = field(
         # A better default for single-instance, single-device, CPU-bottlenecked training:
-        default=max(0, int(os.environ.get("SM_NUM_CPUS", 0)) - 2),
+        default=get_default_num_workers(),
         metadata={
             "help": (
                 "Number of subprocesses to use for data loading (PyTorch only). "
