@@ -1,6 +1,10 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 """SageMaker Processing script to prepare raw documents into SMGT-ready page images
+
+Optionally (by specifying a ProcessingOutput with source /opt/ml/processing/output/thumbnails),
+this job can also generate resized thumbnail images for each page: For use with other downstream
+models that might also require fixed-size image inputs.
 """
 
 # Python Built-Ins:
@@ -10,7 +14,7 @@ from multiprocessing import cpu_count, Pool
 import os
 import shutil
 import time
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Tuple, Union
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(name)s [%(levelname)s] %(message)s")
 
@@ -51,6 +55,94 @@ class ImageExtractionResult:
         self.cats = cats
 
 
+def resize_image(
+    image: PIL.Image.Image,
+    size: Union[int, Tuple[int, int]] = (224, 224),
+    default_square: bool = True,
+    letterbox_color: Optional[Tuple[int, int, int]] = None,
+    max_size: Optional[int] = None,
+    resample: int = PIL.Image.BICUBIC,
+) -> PIL.Image.Image:
+    """Resize (stretch or letterbox) a PIL Image
+
+    In the case no resizing was necessary, the original image object may be returned. Otherwise,
+    the result will be a copy. This function is similar to the logic in Hugging Face
+    image_utils.ImageFeatureExtractionMixin.resize - but defaults to bicubic resampling instead of
+    bilinear and also supports letterboxing as well as aspect ratio stretch.
+
+    Arguments
+    ---------
+    image :
+        The (loaded PIL) image to resize
+    size :
+        The target size to output. May be a sequence of (width, height), or a single number. If
+        `default_square` is `True`, a single number will be resized to (size, size). Otherwise, the
+        **smaller** edge of the image will be matched to `size` and the aspect ratio preserved.
+    default_square :
+        Control how to interpret single-number `size`. Set `True` to target a square, or `False` to
+        preserve aspect ratio.
+    letterbox_color :
+        Provide a 0-255 (R, G, B) tuple to letterbox the image and use this color as the background
+        for any unused area. Leave unset (`None`) to stretch the image to match the target size.
+    max_size :
+        Maximum allowed size for longer edge when using single-`size` mode with `default_square` =
+        `False`. If the longer edge of the image is greater than `max_size` after initial resize,
+        the image is again proportionally resized so that the longer edge is equal to `max_size`.
+        As a result, `size` might be overruled, i.e the smaller edge may be shorter than `size`.
+        Only used if `default_to_square` is `False` and `size` is a single number.
+    resample :
+        PIL.Image.Resampling method, defaults to BICUBIC
+    """
+    if not isinstance(image, PIL.Image.Image):
+        raise ValueError(f"resize_image accepts PIL.Image only. Got: {type(image)}")
+
+    if not hasattr(size, "__len__"):
+        size = (size,)
+
+    if len(size) == 1:
+        if default_square:
+            # Treat as square:
+            size = (size[0], size[0])
+        else:
+            # Specified target shortest edge size:
+            short = size[0]
+            iw, ih = image.size
+            ishort, ilong = (iw, ih) if iw <= ih else (ih, iw)
+
+            if short == ishort:
+                return image
+
+            long = int(short * ilong / ishort)
+
+            # Check longer edge max_size limit if provided:
+            if max_size is not None:
+                if max_size <= short:
+                    raise ValueError(
+                        f"max_size = {max_size} must be strictly greater than the requested "
+                        f"size for the smaller edge = {short}"
+                    )
+                if long > max_size:
+                    short, long = int(max_size * short / long), max_size
+
+            size = (short, long) if iw <= ih else (long, short)
+
+    if letterbox_color:
+        # Letterbox the image to the normalized `size` with given background color:
+        iw, ih = image.size
+        w, h = size
+        scale = min(w / iw, h / ih)
+        nw = int(iw * scale)
+        nh = int(ih * scale)
+        result = PIL.Image.new("RGB", size, letterbox_color)
+        return result.paste(
+            image.resize((nw, nh), resample=resample),
+            ((w - nw) // 2, (h - nh) // 2),
+        )
+    else:
+        # Just stretch the image to fit:
+        return image.resize(size, resample=resample)
+
+
 def clean_document_for_img_ocr(
     rel_filepath: str,
     from_basepath: str,
@@ -59,6 +151,11 @@ def clean_document_for_img_ocr(
     pdf_image_format: str = "png",
     allowed_formats: Iterable[str] = ("jpg", "jpeg", "png"),
     preferred_image_format: str = "png",
+    thumbs_basepath: Optional[str] = None,
+    thumbs_size: Union[int, Tuple[int]] = (224, 224),
+    thumbs_default_square: bool = True,
+    thumbs_letterbox_color: Optional[Tuple[int, int, int]] = None,
+    thumbs_max_size: Optional[int] = None,
     wait: float = 0,
 ) -> ImageExtractionResult:
     """Process an individual PDF or image for use with SageMaker Ground Truth image task UIs
@@ -85,6 +182,18 @@ def clean_document_for_img_ocr(
         tests in 2021-10. Default ('jpg', 'jpeg', 'png').
     preferred_image_format : str
         Format to be used when an image has been saved/converted (Default 'png').
+    thumbs_basepath :
+        If provided, also output resized thumbnail images to this target path (subfolder structure
+        will be preserved like with to_basepath). See also other `thumbs_` options. If falsy,
+        thumbnail images will not be generated.
+    thumbs_size :
+        Size of thumbnail images to generate if thumbnails enabled, as per `resize_image()`.
+    thumbs_default_square :
+        Default thumbnails aspect ratio treatment if thumbnails enabled, as per `resize_image()`.
+    thumbs_letterbox_color :
+        Set to letterbox thumbnails rather than stretch, if enabled, as per `resize_image()`.
+    thumbs_max_size :
+        Max thumbnail output dimension when aspect ratio is preserved, as per `resize_image()`.
     wait : float
         If !=0, this function will `time.sleep(wait)` before running. This is useful for batch jobs
         utilizing all available cores on a machine, where errors might arise if we don't provide a
@@ -98,6 +207,8 @@ def clean_document_for_img_ocr(
     subfolder = os.path.dirname(rel_filepath)
     outfolder = os.path.join(to_basepath, subfolder)
     os.makedirs(outfolder, exist_ok=True)
+    if thumbs_basepath:
+        os.makedirs(os.path.join(thumbs_basepath, subfolder), exist_ok=True)
     basename, ext = split_filename(filename)
     ext_lower = ext.lower()
     result = ImageExtractionResult(
@@ -118,10 +229,21 @@ def clean_document_for_img_ocr(
             full_filepath,
             output_folder=outfolder,
             output_file=basename + "-",
-            # TODO: Use paths_only option to return paths instead of image objs
+            # TODO: Use paths_only option if no thumbs, to return paths instead of image objs
             fmt=pdf_image_format,
             dpi=pdf_dpi,
         )
+        if thumbs_basepath:
+            for img in images:
+                thumbpath = img.filename.replace(to_basepath, thumbs_basepath)
+                resize_image(
+                    img,
+                    size=thumbs_size,
+                    default_square=thumbs_default_square,
+                    letterbox_color=thumbs_letterbox_color,
+                    max_size=thumbs_max_size,
+                ).save(thumbpath)
+
         result.cleanpaths = [i.filename for i in images]
         logger.info(
             "* PDF converted {}:\n    - {}".format(
@@ -180,6 +302,16 @@ def clean_document_for_img_ocr(
             )
             image.save(outpath)
 
+        if thumbs_basepath:
+            thumbpath = outpath.replace(to_basepath, thumbs_basepath)
+            resize_image(
+                image,
+                size=thumbs_size,
+                default_square=thumbs_default_square,
+                letterbox_color=thumbs_letterbox_color,
+                max_size=thumbs_max_size,
+            ).save(thumbpath)
+
         outpaths.append(outpath)
         logger.info(
             "* %s image %s%s (orientation %s) to %s",
@@ -204,6 +336,11 @@ def clean_dataset_for_img_ocr(
     pdf_image_format: str = "png",
     allowed_formats: Iterable[str] = ("jpg", "jpeg", "png"),
     preferred_image_format: str = "png",
+    thumbs_basepath: Optional[str] = None,
+    thumbs_size: Union[int, Tuple[int]] = (224, 224),
+    thumbs_default_square: bool = True,
+    thumbs_letterbox_color: Optional[Tuple[int, int, int]] = None,
+    thumbs_max_size: Optional[int] = None,
 ) -> List[ImageExtractionResult]:
     """Process a mixed PDF/image dataset for use with SageMaker Ground Truth image task UIs
 
@@ -232,6 +369,14 @@ def clean_dataset_for_img_ocr(
         tests in 2021-10. Default ('jpg', 'jpeg', 'png').
     preferred_image_format : str
         Format to be used when an image has been saved/converted (Default 'png').
+    thumbs_size :
+        Size of thumbnail images to generate if thumbnails enabled, as per `resize_image()`.
+    thumbs_default_square :
+        Default thumbnails aspect ratio treatment if thumbnails enabled, as per `resize_image()`.
+    thumbs_letterbox_color :
+        Set to letterbox thumbnails rather than stretch, if enabled, as per `resize_image()`.
+    thumbs_max_size :
+        Max thumbnail output dimension when aspect ratio is preserved, as per `resize_image()`.
     """
     results = []
     if not filepaths:
@@ -255,6 +400,11 @@ def clean_dataset_for_img_ocr(
             pdf_image_format=pdf_image_format,
             allowed_formats=allowed_formats,
             preferred_image_format=preferred_image_format,
+            thumbs_basepath=thumbs_basepath,
+            thumbs_size=thumbs_size,
+            thumbs_default_square=thumbs_default_square,
+            thumbs_letterbox_color=thumbs_letterbox_color,
+            thumbs_max_size=thumbs_max_size,
             wait=0,  # No need to pause in single-threaded for loop
         )
         if result:
@@ -282,6 +432,17 @@ def parse_args():
         default="/opt/ml/processing/output/imgs-clean",
         help="Folder where cleaned output images should be saved",
     )
+    default_thumbs_path = "/opt/ml/processing/output/thumbnails"
+    parser.add_argument(
+        "--thumbnails",
+        type=str,
+        default=default_thumbs_path if os.path.isdir(default_thumbs_path) else None,
+        help=(
+            "(Optional) folder where resized thumbnail images should be saved. Defaults to "
+            f"{default_thumbs_path} IF this path exists, so the functionality can be enabled "
+            "just by configuring the output in a SM Processing Job."
+        ),
+    )
     parser.add_argument(
         "--n-workers",
         type=int,
@@ -297,6 +458,7 @@ def process_doc_in_worker(inputs: dict):
         rel_filepath=inputs["rel_filepath"],
         from_basepath=inputs["in_folder"],
         to_basepath=inputs["out_folder"],
+        thumbs_basepath=inputs["thumbs_folder"],
         wait=0.5,
     )
 
@@ -304,6 +466,8 @@ def process_doc_in_worker(inputs: dict):
 if __name__ == "__main__":
     # Main processing job script:
     args = parse_args()
+    logger.info(f"Parsed job args: %s", args)
+    logger.info("Additional thumbnail output is %s", "ENABLED" if args.thumbnails else "DISABLED")
 
     logger.info("Reading raw files from %s", args.input)
     rel_filepaths_all = sorted(
@@ -327,6 +491,7 @@ if __name__ == "__main__":
                     {
                         "in_folder": args.input,
                         "out_folder": args.output,
+                        "thumbs_folder": args.thumbnails,
                         "rel_filepath": path,
                     }
                     for path in rel_filepaths_all
