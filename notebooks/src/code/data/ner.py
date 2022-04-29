@@ -463,10 +463,14 @@ def get_metric_computer(
         )
         n_examples = probs_raw.shape[0]
         acc = acc_by_example.sum() / n_examples
-        focus_acc = focus_acc_by_example.sum() / n_examples
+        
+        n_focus_examples = n_focus_tokens_by_example[n_focus_tokens_by_example != 0].shape[0]
+        focus_acc = focus_acc_by_example.sum() / n_focus_examples
+
         return {
             "n_examples": n_examples,
             "acc": acc,
+            "n_focus_examples": n_focus_examples,
             "focus_acc": focus_acc,
             # By nature of the metric, focus_acc can sometimes take a few epochs to move away from
             # 0.0. Since acc and focus_acc are both 0-1, we can define this metric to show early
