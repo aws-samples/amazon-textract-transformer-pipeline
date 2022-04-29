@@ -1,0 +1,541 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+
+Description: >-
+  Workshop CDK bootstrap and deployer stack
+
+Parameters:
+  NotebookName:
+    Type: String
+    Default: WorkshopNotebook
+    Description: Enter the name of the SageMaker notebook instance. Default is WorkshopNotebook.
+
+  TargetRepo:
+    Type: String
+    Default: https://github.com/aws-samples/amazon-textract-transformer-pipeline
+    Description: URL of code repository e.g. https://github.com/my-user/my-repo
+
+  VpcId:
+    Type: String
+    Description: VPC ID to use (e.g. vpc-xxxxxx), or blank to use default.
+    Default: ''
+
+  SubnetIds:
+    Type: String
+    Description: >-
+      Comma-separated list of subnet IDs to use (e.g. subnet-xxxxxx), or blank to use all default subnets.
+    Default: ''
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      datascience: 'arn:aws:sagemaker:us-east-1:081325390199:image/datascience-1.0'
+    us-east-2:
+      datascience: 'arn:aws:sagemaker:us-east-2:429704687514:image/datascience-1.0'
+    us-west-1:
+      datascience: 'arn:aws:sagemaker:us-west-1:742091327244:image/datascience-1.0'
+    us-west-2:
+      datascience: 'arn:aws:sagemaker:us-west-2:236514542706:image/datascience-1.0'
+    af-south-1:
+      datascience: 'arn:aws:sagemaker:af-south-1:559312083959:image/datascience-1.0'
+    ap-east-1:
+      datascience: 'arn:aws:sagemaker:ap-east-1:493642496378:image/datascience-1.0'
+    ap-south-1:
+      datascience: 'arn:aws:sagemaker:ap-south-1:394103062818:image/datascience-1.0'
+    ap-northeast-2:
+      datascience: 'arn:aws:sagemaker:ap-northeast-2:806072073708:image/datascience-1.0'
+    ap-southeast-1:
+      datascience: 'arn:aws:sagemaker:ap-southeast-1:492261229750:image/datascience-1.0'
+    ap-southeast-2:
+      datascience: 'arn:aws:sagemaker:ap-southeast-2:452832661640:image/datascience-1.0'
+    ap-northeast-1:
+      datascience: 'arn:aws:sagemaker:ap-northeast-1:102112518831:image/datascience-1.0'
+    ca-central-1:
+      datascience: 'arn:aws:sagemaker:ca-central-1:310906938811:image/datascience-1.0'
+    eu-central-1:
+      datascience: 'arn:aws:sagemaker:eu-central-1:936697816551:image/datascience-1.0'
+    eu-west-1:
+      datascience: 'arn:aws:sagemaker:eu-west-1:470317259841:image/datascience-1.0'
+    eu-west-2:
+      datascience: 'arn:aws:sagemaker:eu-west-2:712779665605:image/datascience-1.0'
+    eu-west-3:
+      datascience: 'arn:aws:sagemaker:eu-west-3:615547856133:image/datascience-1.0'
+    eu-north-1:
+      datascience: 'arn:aws:sagemaker:eu-north-1:243637512696:image/datascience-1.0'
+    eu-south-1:
+      datascience: 'arn:aws:sagemaker:eu-south-1:592751261982:image/datascience-1.0'
+    sa-east-1:
+      datascience: 'arn:aws:sagemaker:sa-east-1:782484402741:image/datascience-1.0'
+
+Resources:
+
+########  COMMON RESOURCES  ########
+  LambdaExecutionPolicy:
+    # TODO: Scope setup Lambda permissions down further
+    # Would be good to scope more perms down to the current region & account ID for e.g.
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      Path: /
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudWatchLogsPermissions
+            Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'
+          - Sid: GetVPCsAndSubnets
+            Effect: Allow
+            Action:
+              - ec2:AssignPrivateIpAddresses  # (Only needed for user post-setup)
+              - ec2:CreateNetworkInterface  # (Only needed for user post-setup)
+              - ec2:DeleteNetworkInterface  # (Only needed for user post-setup)
+              - ec2:DescribeNetworkInterfaces  # (Only needed for user post-setup)
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeSubnets
+              - ec2:DescribeVpcs
+              - ec2:UnassignPrivateIpAddresses  # (Only needed for user post-setup)
+            Resource:
+              - '*'
+          - Sid: StudioEFSWrite  # (Only needed for user post-setup)
+            Effect: Allow
+            Action:
+              - elasticfilesystem:ClientMount
+              - elasticfilesystem:ClientRootAccess
+              - elasticfilesystem:ClientWrite
+              - elasticfilesystem:DescribeMountTargets
+            Resource: '*'  # TODO: Restrict
+          - Sid: SageMakerDomainPermission
+            Effect: Allow
+            Action:
+              - sagemaker:CreateDomain
+              - sagemaker:DeleteDomain
+              - sagemaker:DescribeDomain
+              - sagemaker:UpdateDomain
+              - sagemaker:CreateUserProfile
+              - sagemaker:DeleteUserProfile
+              - sagemaker:DescribeUserProfile
+              - sagemaker:UpdateUserProfile
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:sagemaker:*:*:domain/*'
+              - !Sub 'arn:${AWS::Partition}:sagemaker:*:*:user-profile/*'
+          - Sid: CreateSageMakerServiceLinkedRole
+            Effect: Allow
+            Action:
+              - iam:CreateServiceLinkedRole
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/sagemaker.amazonaws.com/AWSServiceRoleForAmazonSageMakerNotebooks'
+          - Sid: SageMakerExecPassRole
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !GetAtt SageMakerExecutionRole.Arn
+          - Sid: StartCodeBuild
+            Effect: Allow
+            Action:
+              - codebuild:StartBuild
+            Resource:
+              - !GetAtt CodeBuildProject.Arn
+
+  # Permissions for the Lambda functions implementing our custom CFN resources:
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - !Ref LambdaExecutionPolicy
+      Path: /
+
+  # Shared layer loading the cfn-response module (doesn't seem to auto-import with SAM Lambdas)
+  LambdaCommonLayer:
+    Type: 'AWS::Serverless::LayerVersion'
+    Properties:
+      ContentUri: ./lambda-common/
+      CompatibleRuntimes:
+        - python3.8
+        - python3.7
+        - python3.6
+    Metadata:
+      BuildMethod: python3.8
+
+########  END COMMON RESOURCES  ########
+
+########  CDK STACK DEPLOYMENT VIA CODEBUILD  ########
+  CodeBuildServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Path: '/workshop-deployment/'
+      Policies:
+        - PolicyName: StackDeploymentPerms
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: IAMAccess
+                Effect: Allow
+                Action:
+                  - 'iam:AttachRolePolicy'
+                  - 'iam:CreatePolicy'
+                  - 'iam:CreatePolicyVersion'
+                  - 'iam:CreateRole'
+                  - 'iam:DeletePolicy'
+                  - 'iam:DeletePolicyVersion'
+                  - 'iam:DeleteRole'
+                  - 'iam:DeleteRolePolicy'
+                  - 'iam:GetPolicy'
+                  - 'iam:GetPolicyVersion'
+                  - 'iam:GetRole'
+                  - 'iam:GetRolePolicy'
+                  - 'iam:PutRolePolicy'
+                  - 'iam:TagPolicy'
+                  - 'iam:TagRole'
+                  - 'iam:UpdateRole'
+                  - 'iam:UpdateRoleDescription'
+                Resource: '*'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/PowerUserAccess'
+
+  # CodeBuild project to run the CDK deployment:
+  CodeBuildProject:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Artifacts:
+        Type: NO_ARTIFACTS
+      ConcurrentBuildLimit: 1
+      Description: CDK stack deployer
+      Environment:
+        # Certificate
+        # See https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-compute-types.html
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: PUBLIC_REPO
+            Type: PLAINTEXT
+            Value: !Ref TargetRepo
+        Image: aws/codebuild/standard:5.0
+        ImagePullCredentialsType: CODEBUILD
+        PrivilegedMode: true  # Enable Docker
+        Type: LINUX_CONTAINER
+      QueuedTimeoutInMinutes: 60  # 480 is the max
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Source:
+        BuildSpec: |
+          version: 0.2
+          env:
+            variables:
+              CDK_NEW_BOOTSTRAP: "1"
+          phases:
+            pre_build:
+              commands:
+                - set -ex
+                - curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/install-poetry.py | python -
+                - export PATH="/root/.local/bin:$PATH"
+                - npm install -g aws-cdk
+            build:
+              commands:
+                - set -ex
+                - git clone --depth 1 $PUBLIC_REPO code
+                - cd code
+                - poetry install
+                - poetry run cdk bootstrap
+                - poetry run cdk deploy --all --require-approval never
+        SourceIdentifier: targetrepo
+        # Note we use 'NO_SOURCE' and git clone in the job, because GitHub sources require auth
+        # setup even if the repository is public!
+        Type: NO_SOURCE
+
+      TimeoutInMinutes: 40  # 480 is the max, should really take 10
+
+  CodeBuildTriggerFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Description: CloudFormation custom resource implementation for running CodeBuild project
+      CodeUri: ./fn-codebuild-run/
+      Handler: main.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.8
+      Timeout: 900
+      Layers:
+        - !Ref LambdaCommonLayer
+
+  # Trigger the CodeBuild project just once on stack create:
+  CodeBuildTrigger:
+    Type: 'Custom::CodeBuildTrigger'
+    Properties:
+      ServiceToken: !GetAtt CodeBuildTriggerFunction.Arn
+      ProjectName: !Ref CodeBuildProject
+
+########  END CDK STACK DEPLOYMENT VIA CODEBUILD  ########
+
+########  SAGEMAKER ENVIRONMENT BASE SETUP  ########
+  # Permissions for the SageMaker notebook environment:
+  SageMakerExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: sagemaker.amazonaws.com
+            Action: sts:AssumeRole
+      Path: '/'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSageMakerFullAccess'
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/IAMFullAccess'
+
+  # If running on classic notebook instances, make sure widgets library is installed:
+  NotebookConfig:
+    Type: 'AWS::SageMaker::NotebookInstanceLifecycleConfig'
+    Properties:
+      NotebookInstanceLifecycleConfigName: !Sub '${AWS::StackName}-LifecycleConfig'
+      OnStart:
+        - Content:
+            Fn::Base64: !Sub |
+              #!/bin/bash
+              set -e
+
+              # Install extension for ipywidgets interactivity:
+              sudo -u ec2-user -i <<'EOF'
+              source /home/ec2-user/anaconda3/bin/activate JupyterSystemEnv
+              jupyter labextension install @jupyter-widgets/jupyterlab-manager
+              source /home/ec2-user/anaconda3/bin/deactivate
+              EOF
+
+  # Classic notebook instance in case you want to run the workshop there:
+  NotebookInstance:
+    Type: 'AWS::SageMaker::NotebookInstance'
+    Properties:
+      InstanceType: ml.t3.medium
+      PlatformIdentifier: notebook-al2-v1
+      LifecycleConfigName: !GetAtt NotebookConfig.NotebookInstanceLifecycleConfigName
+      NotebookInstanceName: !Ref NotebookName
+      RoleArn: !GetAtt SageMakerExecutionRole.Arn
+      VolumeSizeInGB: 30
+      DefaultCodeRepository: !Ref TargetRepo
+
+  # Custom resource implementation for creating SMStudio domains
+  StudioDomainFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Description: CloudFormation custom resource implementation for SageMaker Studio domain
+      CodeUri: ./fn-domain/
+      Handler: main.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.8
+      Timeout: 900
+      Layers:
+        - !Ref LambdaCommonLayer
+
+  # Custom resource implementation for creating SMStudio users
+  UserProfileFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Description: CloudFormation custom resource implementation for SageMaker Studio users
+      CodeUri: ./fn-user/
+      Handler: main.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.8
+      Timeout: 900
+      Layers:
+        - !Ref LambdaCommonLayer
+
+  StudioDomain:
+    Type: 'Custom::StudioDomain'
+    Properties:
+      ServiceToken: !GetAtt StudioDomainFunction.Arn
+      VPC: !Ref VpcId
+      SubnetIds: !Ref SubnetIds
+      DomainName: 'PoCDomain'
+      DefaultUserSettings:
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+
+  UserProfile:
+    Type: 'Custom::UserProfile'
+    DependsOn:
+      - StudioDomain
+    Properties:
+      ServiceToken: !GetAtt UserProfileFunction.Arn
+      DomainId: !GetAtt StudioDomain.DomainId
+      UserProfileName: 'workshop-user'
+      UserSettings:
+        ExecutionRole: !GetAtt SageMakerExecutionRole.Arn
+
+  # Pre-warm the JupyterServer app to make initially opening Studio faster for participants:
+  SMJupyterApp:
+    Type: 'AWS::SageMaker::App'
+    DependsOn: UserProfile
+    Properties: 
+      AppName: default
+      AppType: JupyterServer
+      DomainId: !GetAtt StudioDomain.DomainId
+      UserProfileName: !GetAtt UserProfile.UserProfileName
+
+  # Pre-warm the default Python 3 (Data Science) kernel to make first exercise start-up faster:
+  SMDataScienceApp:
+    Type: 'AWS::SageMaker::App'
+    DependsOn: UserProfile
+    Properties: 
+      AppName: instance-prewarm-datascience-ml-t3-medium
+      AppType: KernelGateway
+      DomainId: !GetAtt StudioDomain.DomainId
+      ResourceSpec: 
+        InstanceType:  ml.t3.medium
+        SageMakerImageArn: !FindInMap
+          - RegionMap
+          - !Ref 'AWS::Region'
+          - datascience
+      UserProfileName: !GetAtt UserProfile.UserProfileName
+
+########  END SAGEMAKER ENVIRONMENT BASE SETUP  ########
+
+########  PRE-CLONING GIT REPO TO SAGEMAKER STUDIO ENVIRONMENT  ########
+## This is easy on a notebook instance (see above) but requires a few more steps for Studio
+
+  # First we'll need to set up an access point for the EFS filesystem backing our Studio domain:
+  StudioEFSAccessPoint:
+    Type: 'AWS::EFS::AccessPoint'
+    Properties:
+      FileSystemId: !GetAtt StudioDomain.HomeEfsFileSystemId
+      PosixUser:
+        Gid: '0'
+        Uid: '0'
+
+  # - To access EFS a Lambda function needs to be deployed in VPC.
+  # - VPC-deployed Lambdas do not get public IP addresses by default, so can't reach internet even
+  #   if an internet gateway / relevant security groups are in place: so we need a NAT Gateway.
+  # Hence all this VPC stuff...
+  # (We'll create just a single-AZ deployment for our user setup Lambda to keep things simple)
+  LambdaSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !GetAtt StudioDomain.ProposedAdminSubnetCidr
+      # TODO: Support IPv6
+      #AssignIpv6AddressOnCreation: false
+      #Ipv6CidrBlock: !Select [3, !Cidr [!Select [0, !GetAtt 'VPC.Ipv6CidrBlocks'], 4, 64]]
+      VpcId: !GetAtt StudioDomain.VpcId
+      Tags:
+      - Key: Name
+        Value: 'StudioSetupLambdaSubnet'
+  LambdaRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !GetAtt StudioDomain.VpcId
+      Tags:
+        - Key: Name
+          Value: 'StudioSetupLambdaSubnet'
+  LambdaRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref LambdaSubnet
+      RouteTableId: !Ref LambdaRouteTable
+  NatGatewayEIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+  NatGateway:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Select [0, !Split [',', !GetAtt StudioDomain.SubnetIds]]
+  LambdaNatGatewayRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref LambdaRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NatGateway
+
+  LambdaPublicAccessSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: >-
+        Security group conferring public internet access to SageMaker Studio user setup Lambda
+      SecurityGroupEgress:
+        - CidrIp: '0.0.0.0/0'
+          Description: All traffic
+          IpProtocol: '-1'
+      SecurityGroupIngress:
+        - CidrIp: '0.0.0.0/0'
+          Description: All traffic
+          IpProtocol: '-1'
+      VpcId: !GetAtt StudioDomain.VpcId
+
+  # Now ready to define the implementation of our custom resource:
+  UserSetupFunction:
+    Type: 'AWS::Serverless::Function'
+    DependsOn:
+      - StudioEFSAccessPoint
+      - LambdaNatGatewayRoute
+      - LambdaRouteTableAssociation
+      - NatGateway
+    Properties:
+      Description: CloudFormation custom resource implementation for SageMaker Studio users
+      CodeUri: ./fn-usersetup/
+      Handler: main.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.8
+      Timeout: 300
+      Layers:
+        # 3rd party layer to install Git binaries on Lambda function. 
+        # See: https://github.com/lambci/git-lambda-layer
+        - !Sub 'arn:aws:lambda:${AWS::Region}:553035198032:layer:git-lambda2:8'
+        - !Ref LambdaCommonLayer
+      FileSystemConfigs:
+        - Arn: !GetAtt StudioEFSAccessPoint.Arn
+          LocalMountPath: /mnt/efs
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaPublicAccessSecurityGroup  # Public access for fetching from GitHub/etc
+          - !GetAtt StudioDomain.OutboundEFSSecurityGroupId  # Access to connect to Studio home filesystem
+          - !GetAtt StudioDomain.InboundEFSSecurityGroupId  # TODO: Is this actually needed?
+        SubnetIds:
+          - !Ref LambdaSubnet
+
+  # Actual resource instantiation: Clone the TargetRepo into the user's SMStudio EFS home folder:
+  UserSetup:
+    Type: 'Custom::UserSetup'
+    DependsOn:
+      - UserProfile
+    Properties:
+      ServiceToken: !GetAtt UserSetupFunction.Arn
+      DomainId: !GetAtt StudioDomain.DomainId
+      UserProfileName: !GetAtt UserProfile.UserProfileName
+      HomeEfsFileSystemUid: !GetAtt UserProfile.HomeEfsFileSystemUid
+      GitRepository: !Ref TargetRepo
+
+########  END PRE-CLONING GIT REPO TO SAGEMAKER STUDIO ENVIRONMENT  ########
+
+Outputs:
+  DomainId:
+    Description: SageMaker Studio Domain ID
+    Value: !GetAtt StudioDomain.DomainId
+  UserProfileName:
+    Description: SageMaker Studio Username
+    Value: !GetAtt UserProfile.UserProfileName
+  HomeEfsFileSystemUid:
+    Description: SageMaker Studio EFS User ID
+    Value: !GetAtt UserProfile.HomeEfsFileSystemUid
+  SubnetIds:
+    Description: VPC Subnet IDs
+    Value: !GetAtt StudioDomain.SubnetIds
