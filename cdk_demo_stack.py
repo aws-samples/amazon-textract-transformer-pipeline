@@ -111,8 +111,8 @@ class PipelineDemoStack(Stack):
                 + self.pipeline.config_read_write_statements()
                 # In the notebooks we'll use the same execution role for the trained model/endpoint
                 # as the notebook itself runs with - so need to grant the role the required perms
-                # for reading/writing relevant S3 buckets in the pipeline:
-                + self.pipeline.enrichment_model_statements(),
+                # for reading/writing relevant S3 buckets and publishing to SNS in the pipeline:
+                + self.pipeline.sagemaker_model_statements(),
             ),
         )
 
@@ -155,9 +155,18 @@ class PipelineDemoStack(Stack):
             self,
             "SageMakerEndpointParamName",
             description="SSM parameter to configure the pipeline's SageMaker endpoint name",
-            value=self.pipeline.sagemaker_model_param.parameter_name,
+            value=self.pipeline.sagemaker_endpoint_param.parameter_name,
         )
         self.model_param_output.override_logical_id("SageMakerEndpointParamName")
+        self.thumbnail_param_output = CfnOutput(
+            self,
+            "ThumbnailEndpointParamName",
+            description=(
+                "SSM parameter to configure the pipeline's Thumbnail generation endpoint name"
+            ),
+            value=self.pipeline.thumbnail_endpoint_param.parameter_name,
+        )
+        self.thumbnail_param_output.override_logical_id("ThumbnailEndpointParamName")
         self.entity_config_param_output = CfnOutput(
             self,
             "EntityConfigParamName",
@@ -251,6 +260,20 @@ class PipelineDemoStack(Stack):
             simple_name=False,
             string_value=self.pipeline.enriched_results_bucket.bucket_name,
         )
+        self.thumbnails_callback_topic_ssm_param = ssm.StringParameter(
+            self,
+            "ThumbnailsCallbackTopicSSMParam",
+            description="ARN of the SNS Topic to use for thumbnail images generation callback",
+            parameter_name=(
+                f"/{self.project_id_param.value_as_string}/static/ThumbnailsCallbackTopicArn"
+            ),
+            simple_name=False,
+            string_value=(
+                self.pipeline.thumbnail_sns_topic.topic_arn
+                if self.pipeline.thumbnail_sns_topic
+                else "undefined"
+            ),
+        )
         self.enrichment_callback_topic_ssm_param = ssm.StringParameter(
             self,
             "EnrichmentModelCallbackTopicSSMParam",
@@ -282,6 +305,7 @@ class PipelineDemoStack(Stack):
                     self.reviews_bucket_ssm_param,
                     self.pipeline_statemachine_ssm_param,
                     self.textract_statemachine_ssm_param,
+                    self.thumbnails_callback_topic_ssm_param,
                     self.enrichment_callback_topic_ssm_param,
                     self.enrichment_results_bucket_ssm_param,
                     self.a2i_role_arn_param,

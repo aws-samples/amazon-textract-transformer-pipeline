@@ -3,6 +3,7 @@
 """Visualization utilities for OCR enrichment"""
 
 # Python Built-Ins:
+import io
 import json
 from operator import itemgetter
 from typing import Dict, List, Optional, Tuple, Union
@@ -367,3 +368,65 @@ def draw_from_manifest_items(
         draw,
         ix=widgets.IntSlider(min=0, max=len(items) - 1, step=1, value=0, description="Example:"),
     )
+
+
+def draw_thumbnails_response(
+    res: Union[np.ndarray, np.lib.npyio.NpzFile],
+    figsize: Tuple[int, int] = (4, 4),
+    n_cols: int = 5,
+) -> None:
+    """Plot results from a thumbnails endpoint request
+
+    Arguments
+    ---------
+    res :
+        Result from the endpoint (after deserializing with numpy.load)
+    figsize :
+        Reference size for an individual plot
+    n_cols :
+        Number of columns added for multi-page plots
+    """
+    data = res
+    data_type = None
+
+    if isinstance(res, np.lib.npyio.NpzFile):
+        # A numpy archive
+        if "images" in res:
+            data = res["images"]
+        elif "image" in res:
+            data = res["image"]
+        else:
+            raise ValueError("Got .npz archive containing neither 'images' nor 'image'")
+
+    if isinstance(data, np.ndarray):
+        # A plain numpy array
+        if data.dtype.kind == "S":
+            data_type = "png-bytes"
+        else:
+            data_type = "pixel-array"
+    else:
+        raise ValueError(f"Expected a numpy array or .npz archive but got: {type(data)}")
+
+    if data_type == "png-bytes":
+        n_images = len(data)
+        n_max_subplots = min(n_cols, n_images)
+        fig = None
+        axes = None
+        for ix, bstr in enumerate(data):
+            ix_subplot = ix % n_max_subplots
+            if ix_subplot == 0:
+                n_subplots = min(n_max_subplots, n_images - ix)
+                fig, axes = plt.subplots(
+                    ncols=n_subplots,
+                    figsize=(figsize[0] * n_subplots, figsize[1]),
+                )
+            ax = axes[ix_subplot] if hasattr(axes, "__getitem__") else axes
+            with io.BytesIO(bstr) as f:
+                ax.imshow(np.array(PIL.Image.open(f)))
+                ax.set_title(f"Page {ix + 1}")
+        plt.show()
+    else:
+        fig, ax = plt.subplots(figsize=figsize)
+        ax.imshow(data)
+        ax.set_title("Single Image")
+        plt.show()

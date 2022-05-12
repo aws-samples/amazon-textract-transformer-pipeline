@@ -82,15 +82,17 @@ If your dataset is particularly tiny (more like e.g. 30 labelled pages than 100)
 
 ## Customizing the pipeline
 
-### Handling large documents
+### Handling large documents (or optimizing for small ones)
 
 Because some components of the pipeline have configured timeouts or process consolidated document Textract JSON in memory, scaling to very large documents (e.g. hundreds of pages) may require some configuration changes in the CDK solution.
 
 Consider:
 
 - Increasing the `timeout_excluding_queue` (in [pipeline/ocr/__init__.py TextractOcrStep](pipeline/ocr/__init__.py)) to accommodate the longer Textract processing and Lambda consolidation time (e.g. to 20mins+)
-- Increasing the `timeout` and `memory_size` of the `CallTextract` Lambda function in [pipeline/ocr/__init__.py](pipeline/ocr/__init__.py) to accommodate consolidating the large Textract result JSON to a single S3 file (e.g. to 300sec, 1024MB)
-- Likewise increasing the `memory_size` of the `PostProcessFn` Lambda function in [pipeline/postprocessing/__init__.py](pipeline/postprocessing/__init__.py), which also loads and processes full document JSON (e.g. to 1024MB)
+- Increasing the `timeout` and `memory_size` of the `CallTextract` Lambda function in [pipeline/ocr/__init__.py](pipeline/ocr/__init__.py) to accommodate consolidating the large Textract result JSON to a single S3 file (e.g. to 8min, 2048MB)
+- Likewise increasing the `memory_size` of the `PostProcessFn` Lambda function in [pipeline/postprocessing/__init__.py](pipeline/postprocessing/__init__.py), which also loads and processes full document JSON (e.g. to 1024MB or more)
+
+Conversely if you know up-front your use case will handle only images or short documents, you may be able to reduce these settings from the defaults to save costs.
 
 
 ### Using Amazon Textract `TABLES` and `FORMS` features in the pipeline

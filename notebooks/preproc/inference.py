@@ -1,10 +1,13 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""SageMaker Processing script to prepare raw documents into SMGT-ready page images
+"""Script to prepare raw documents into SMGT/model-ready page images (in batch or real-time)
 
-Optionally (by specifying a ProcessingOutput with source /opt/ml/processing/output/thumbnails),
-this job can also generate resized thumbnail images for each page: For use with other downstream
-models that might also require fixed-size image inputs.
+This script can be used in a SageMaker Processing job to prepare images for SageMaker Ground Truth
+labelling in batch (with optional extra thumbnails output by specifying a ProcessingOutput with
+source /opt/ml/processing/output/thumbnails).
+
+It can also be deployed as a SageMaker Endpoint (for asynchronous inference, to accommodate large
+payloads in request/response) for generating page thumbnail bundles on-the-fly.
 """
 
 # Python Built-Ins:
@@ -500,3 +503,207 @@ if __name__ == "__main__":
         ):
             logger.info("Processed doc %s of %s", ix + 1, n_docs)
     logger.info("All done!")
+
+
+########  EXTRAS FOR REAL-TIME SAGEMAKER ENDPOINT PROCESSING  ########
+# Items below this line are used for exposing the functionality on-demand via a SageMaker Endpoint
+
+# Python Built-Ins:
+import io
+from tempfile import TemporaryDirectory
+from typing import Any, Dict
+
+# External Dependencies:
+import numpy as np
+
+# MIME type constants:
+SINGLE_IMAGE_CONTENT_TYPES = {
+    "image/jpeg": "JPG",
+    "image/png": "PNG",
+}
+MULTI_IMAGE_CONTENT_TYPES = {
+    "image/tiff": "TIFF",
+}
+PDF_CONTENT_TYPES = set(("application/pdf",))
+
+# Endpoint environment variable configurations:
+# When running in SM Endpoint, we can't use the usual processing job command line argument pattern
+# to configure these extra parameters - so expose them via environment variables instead.
+RT_THUMBNAIL_SIZE = tuple(int(x) for x in os.environ.get("RT_THUMBNAIL_SIZE", "224,224").split(","))
+if len(RT_THUMBNAIL_SIZE) == 1:
+    RT_THUMBNAIL_SIZE = RT_THUMBNAIL_SIZE[0]
+RT_PDF_DPI = int(os.environ.get("RT_PDF_DPI", "300"))
+RT_DEFAULT_SQUARE = os.environ.get("RT_DEFAULT_SQUARE", "true").lower()
+if RT_DEFAULT_SQUARE in ("true", "t", "yes", "y", "1"):
+    RT_DEFAULT_SQUARE = True
+elif RT_DEFAULT_SQUARE in ("false", "f", "no", "n", "0"):
+    RT_DEFAULT_SQUARE = False
+else:
+    raise ValueError("Environment variable RT_DEFAULT_SQUARE should be 'true', 'false', or not set")
+RT_LETTERBOX_COLOR = os.environ.get("RT_LETTERBOX_COLOR")
+if RT_LETTERBOX_COLOR:
+    RT_LETTERBOX_COLOR = tuple(int(x) for x in RT_LETTERBOX_COLOR.split(","))
+RT_MAX_SIZE = os.environ.get("RT_MAX_SIZE")
+RT_MAX_SIZE = int(RT_MAX_SIZE) if RT_MAX_SIZE else None
+RT_PREFERRED_IMAGE_FORMAT = os.environ.get("RT_PREFERRED_IMAGE_FORMAT", "png")
+
+
+def model_fn(model_dir: str):
+    """Dummy model loader: There is no "model" for this processing case
+
+    So long as predict_fn is present (so the container doesn't try to use this as a PyTorch model),
+    it doesn't really matter what we return here.
+    """
+    return lambda x: x
+
+
+def input_fn(input_bytes: bytes, content_type: str) -> Dict:
+    """Deserialize real-time processing requests
+
+    Requests should be binary data (image or document), and this endpoint should typically be
+    deployed as async to accommodate potentially large payload sizes.
+
+    Returns
+    -------
+    result :
+        Dict with "type" (an extension e.g. pdf, png, jpg) and **either** "image" (single loaded
+        PIL image) **or** "doc" (raw document bytes for multi-page formats).
+    """
+    logger.debug("Deserializing request of content_type %s", content_type)
+    if content_type in SINGLE_IMAGE_CONTENT_TYPES:
+        logger.debug("Single image request")
+        # Cannot `with` the buffer, because PIL requires the buffer to still be available later:
+        buffer = io.BytesIO(input_bytes)
+        img = PIL.Image.open(buffer)
+        return {"image": img, "type": SINGLE_IMAGE_CONTENT_TYPES[content_type]}
+    elif content_type in PDF_CONTENT_TYPES:
+        logger.debug("PDF document request")
+        return {"doc": input_bytes, "type": "pdf"}
+    elif content_type in MULTI_IMAGE_CONTENT_TYPES:
+        logger.debug("(Multi-page) TIFF image request")
+        return {"doc": input_bytes, "type": MULTI_IMAGE_CONTENT_TYPES[content_type]}
+    else:
+        raise ValueError(
+            "Unrecognised request content type {} not in supported list: {}".format(
+                content_type,
+                PDF_CONTENT_TYPES.union(SINGLE_IMAGE_CONTENT_TYPES),
+            )
+        )
+
+
+def predict_fn(input_data: dict, model: Any):
+    """Execute real-time processing requests
+
+    Either resize an individual image, or run the full thumbnail extraction process for a document.
+    Document processing is done in a temporary directory
+
+    Returns
+    -------
+    result :
+        A dict with either "image" (a single PIL image, for single-image requests) or "images" (a
+        list of PIL images, for document format inputs)
+    """
+    if "image" in input_data:
+        logger.info("Resizing single image")
+        return {
+            "image": resize_image(
+                image=input_data["image"],
+                size=RT_THUMBNAIL_SIZE,
+                default_square=RT_DEFAULT_SQUARE,
+                letterbox_color=RT_LETTERBOX_COLOR,
+                max_size=RT_MAX_SIZE,
+                # resample: int = PIL.Image.BICUBIC,
+            ),
+        }
+    elif "doc" in input_data:
+        logger.info("Collecting document page thumbnails")
+        with TemporaryDirectory() as tmpdir:
+            tmpdir_in = os.path.join(tmpdir, "in")
+            os.makedirs(tmpdir_in, exist_ok=True)
+            rel_filepath = f"doc.{input_data['type']}"
+            inpath = os.path.join(tmpdir_in, rel_filepath)
+            with open(inpath, "wb") as f:
+                f.write(input_data["doc"])
+            tmpdir_out = os.path.join(tmpdir, "out")
+            os.makedirs(tmpdir_out, exist_ok=True)
+
+            clean_document_for_img_ocr(
+                rel_filepath=rel_filepath,
+                from_basepath=tmpdir_in,
+                to_basepath=tmpdir_out,
+                pdf_dpi=RT_PDF_DPI,
+                pdf_image_format=RT_PREFERRED_IMAGE_FORMAT,
+                preferred_image_format=RT_PREFERRED_IMAGE_FORMAT,
+                thumbs_basepath=tmpdir_out,
+                thumbs_size=RT_THUMBNAIL_SIZE,
+                thumbs_default_square=RT_DEFAULT_SQUARE,
+                thumbs_letterbox_color=RT_LETTERBOX_COLOR,
+                thumbs_max_size=RT_MAX_SIZE,
+            )
+
+            imgs = []
+            for filename in os.listdir(tmpdir_out):
+                with open(os.path.join(tmpdir_out, filename), "rb") as ftmp:
+                    filebytes = ftmp.read()
+                imgs.append(PIL.Image.open(io.BytesIO(filebytes)))
+            logger.info("Prepared doc images")
+            return {"images": imgs}
+    else:
+        logger.error("Expected 'image' or 'doc' in deserialized request object: %s", input_data)
+        raise RuntimeError("Expected 'image' or 'doc' in deserialized request object")
+
+
+def output_fn(prediction_output: Dict, accept: str) -> bytes:
+    """Serialize results for real-time processing requests
+
+    Image response 'Accept' types (e.g. image/png) are supported only for single-image requests.
+
+    application/x-npy will return an *uncompressed* numpy array of either:
+    - Pixel data for single-image type requests, or
+    - PNG file bytestrings for document/multi-page type requests
+
+    application/x-npz (preferred for multi-page documents) will return a *compressed* numpy archive
+    including either:
+    - "image": Pixel data for single-image type requests, or
+    - "images": PNG file bytestrings for document/multi-page type requests
+    """
+    if accept in SINGLE_IMAGE_CONTENT_TYPES:
+        logger.info("Preparing single-image response")
+        if "image" in prediction_output:
+            buffer = io.BytesIO()
+            prediction_output["image"].save(buffer, format=SINGLE_IMAGE_CONTENT_TYPES[accept])
+            return buffer.getvalue()
+        else:
+            raise ValueError(
+                f"Requested content type {accept} can only be used for single-page images. "
+                "Try application/x-npz for a compressed numpy array of PNG image bytes."
+            )
+    elif accept in ("application/x-npy", "application/x-npz"):
+        is_npz = accept == "application/x-npz"
+        logger.info("Preparing %snumpy response", "compressed " if is_npz else "")
+        if "image" in prediction_output:
+            arr = np.array(prediction_output["image"].convert("RGB"))
+            buffer = io.BytesIO()
+            if is_npz:
+                np.savez_compressed(buffer, image=arr)
+            else:
+                np.save(buffer, arr)
+            return buffer.getvalue()
+        else:
+            imgs = []
+            for img in prediction_output["images"]:
+                with io.BytesIO() as buffer:
+                    img.save(buffer, format=RT_PREFERRED_IMAGE_FORMAT)
+                    imgs.append(buffer.getvalue())
+            imgs = np.array(imgs)
+            buffer = io.BytesIO()
+            if is_npz:
+                np.savez_compressed(buffer, images=imgs)
+            else:
+                np.save(buffer, imgs)
+            return buffer.getvalue()
+    else:
+        raise ValueError(
+            f"Requested content type {accept} not recognised. Use application/x-npz (compressed) "
+            "or application/x-npy - or (for single images) a supported image/... content type."
+        )
