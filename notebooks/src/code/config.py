@@ -109,7 +109,7 @@ class SageMakerTrainingArguments(TrainingArguments):
             "help": (
                 "Overwrite the content of the output directory."
                 "Use this to continue training if output_dir points to a checkpoint directory."
-            )
+            ),
         },
     )
     # Tweak default batch sizes for this model & task
@@ -118,6 +118,16 @@ class SageMakerTrainingArguments(TrainingArguments):
     )
     per_device_eval_batch_size: int = field(
         default=8, metadata={"help": "Batch size per GPU/TPU core/CPU for evaluation."}
+    )
+    remove_unused_columns: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to automatically remove datasets.Dataset columns unused by the "
+                "model.forward() method. This should be False by default, as our implementation "
+                "either uses a custom data collator (LLMv1) or pre-processes the dataset (v2/XLM)."
+            ),
+        },
     )
 
     def __post_init__(self):
@@ -260,6 +270,14 @@ class DataTrainingArguments:
         default=os.environ.get("SM_CHANNEL_VALIDATION"),
         metadata={"help": "The data channel (local folder) for model evaluation"},
     )
+    images: Optional[str] = field(
+        default=os.environ.get("SM_CHANNEL_IMAGES"),
+        metadata={"help": "The data channel containing (resized) page images"},
+    )
+    images_prefix: str = field(
+        default="",
+        metadata={"help": "Prefix mapping manifest S3 URIs to the 'images' channel"},
+    )
 
     # NER (token classification) specific parameters:
     num_labels: Optional[int] = field(
@@ -280,6 +298,11 @@ class DataTrainingArguments:
     # MLM (pre-training) specific parameters:
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Ratio of tokens to mask for masked language modeling loss"}
+    )
+
+    pad_to_multiple_of: Optional[int] = field(
+        default=8,
+        metadata={"help": "Pad sequences to a multiple of this value, for tensor core efficiency"},
     )
 
     def __post_init__(self):

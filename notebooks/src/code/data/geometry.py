@@ -154,6 +154,33 @@ class BoundingBoxAnnotationResult:
     def boxes(self):
         return self._boxes
 
+    def normalized_boxes(
+        self,
+        return_tensors: str = "np",
+    ):
+        """Annotation boxes in 0-1000 normalized x0,y0,x1,y1 array/tensor format as per LayoutLM"""
+        raw_zero_to_one_list = [
+            [
+                box.rel_left,
+                box.rel_top,
+                box.rel_right,
+                box.rel_bottom,
+            ]
+            for box in self._boxes
+        ]
+        if return_tensors == "np":
+            if len(raw_zero_to_one_list) == 0:
+                return np.zeros((0, 4), dtype="long")
+            else:
+                return (np.array(raw_zero_to_one_list) * 1000).astype("long")
+        elif return_tensors == "pt":
+            if len(raw_zero_to_one_list) == 0:
+                return torch.zeros((0, 4), dtype=torch.long)
+            else:
+                return (torch.FloatTensor(raw_zero_to_one_list) * 1000).long()
+        else:
+            raise ValueError("return_tensors must be 'np' or 'pt'. Got: %s" % return_tensors)
+
 
 def layoutlm_boxes_from_trp_blocks(
     textract_blocks: Iterable[
@@ -200,9 +227,15 @@ def layoutlm_boxes_from_trp_blocks(
         for block in textract_blocks
     ]
     if return_tensors == "np":
-        return np.array(raw_zero_to_one_list) * 1000
+        if len(raw_zero_to_one_list) == 0:
+            return np.zeros((0, 4), dtype="long")
+        else:
+            return (np.array(raw_zero_to_one_list) * 1000).astype("long")
     elif return_tensors == "pt":
-        return (torch.FloatTensor(raw_zero_to_one_list) * 1000).long()
+        if len(raw_zero_to_one_list) == 0:
+            return torch.zeros((0, 4), dtype=torch.long)
+        else:
+            return (torch.FloatTensor(raw_zero_to_one_list) * 1000).long()
     else:
         raise ValueError(
             "return_tensors must be 'np' or 'pt' for layoutlm_boxes_from_trp_blocks(). Got: %s"

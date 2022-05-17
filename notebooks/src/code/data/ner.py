@@ -8,180 +8,40 @@ extracted by Textract, to classify each WORD to an entity type (or 'other' if no
 """
 # Python Built-Ins:
 from dataclasses import dataclass
+from inspect import signature
 from numbers import Real
-from typing import Any, Callable, ClassVar, Dict, Iterable, List, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 # External Dependencies:
 import numpy as np
 import torch
 from torch.nn import CrossEntropyLoss
 from transformers.data.data_collator import DataCollatorForTokenClassification
+from transformers.processing_utils import ProcessorMixin
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-import trp
 
 # Local Dependencies:
 from ..config import DataTrainingArguments
 from ..logging_utils import getLogger
-from .base import ExampleSplitterBase, NaiveExampleSplitter, TaskData, TextractLayoutLMDatasetBase
-from .geometry import BoundingBoxAnnotationResult, layoutlm_boxes_from_trp_blocks
+from .base import (
+    LayoutLMDataCollatorMixin,
+    prepare_base_dataset,
+    split_long_dataset_samples,
+    TaskData,
+    tokenize_process_dataset,
+)
+from .geometry import BoundingBoxAnnotationResult
 
 
 logger = getLogger("data.ner")
 
 
-@dataclass
-class TextractLayoutLMExampleForWordClassification:
-    """Data class yielded as examples by an NER dataset for training or inference"""
-
-    word_boxes_normalized: np.ndarray  # Nx4 array already normalized to LayoutLM 0-1000 format
-    word_texts: List[str]  # List of length N, text per Textract WORD block
-    word_labels: Optional[np.ndarray] = None  # 1D integer array of length N, class ID per word
-
-
-@dataclass
-class TextractLayoutLMDataCollatorForWordClassification(DataCollatorForTokenClassification):
-    """Collator to process (batches of) Examples into batched model inputs
-
-    For our case, tokenization can happen at the batch level which allows us to pad to the longest
-    sample in batch rather than the overall model max_seq_len. Word splitting is already done by
-    Textract, and some custom logic is required to feed through the bounding box inputs from
-    Textract (at word level) to the model inputs (at token level).
-    """
-
-    bos_token_box: Tuple[int, int, int, int] = (0, 0, 0, 0)
-    pad_token_box: Tuple[int, int, int, int] = (0, 0, 0, 0)
-    sep_token_box: Tuple[int, int, int, int] = (1000, 1000, 1000, 1000)
-
-    def __post_init__(self):
-        self.special_token_boxes = torch.LongTensor(
-            [
-                self.bos_token_box,
-                self.pad_token_box,
-                self.sep_token_box,
-            ]
-        )
-        # super().__post_init__ not present in this parent class
-
-    def numpy_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
-        raise NotImplementedError(
-            "Custom Textract MLM data collator has not been implemented for NumPy"
-        )
-
-    def tf_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
-        raise NotImplementedError(
-            "Custom Textract MLM data collator has not been implemented for TensorFlow"
-        )
-
-    def torch_call(
-        self,
-        examples: List[TextractLayoutLMExampleForWordClassification],
-    ) -> Dict[str, Any]:
-        # Tokenize, pad and etc the words:
-        batch = self.tokenizer(
-            [example.word_texts for example in examples],
-            is_split_into_words=True,
-            return_attention_mask=True,
-            padding=bool(self.pad_to_multiple_of),
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors=self.return_tensors,
-        )
-        # Map through the bounding boxes and word labels to the generated tokens:
-        # We do this by augmenting the list of word bboxes/labels to include values for the special
-        # tokens, editing the word_ids mapping from tokens->words to match special tokens to their
-        # special values (instead of None), and then applying this set of indexes to produce the
-        # token-wise boxes/labels including special tokens.
-        bbox_tensors_by_example = []
-        label_tensors_by_example = []
-        for ixex in range(len(examples)):
-            word_ids = batch.word_ids(ixex)
-            n_real_words = len(examples[ixex].word_texts)
-
-            # Map labels:
-            # (Labels have just one dummy label for all padding/special tokens)
-            if examples[ixex].word_labels is not None:
-                augmented_example_labels = torch.LongTensor(
-                    np.concatenate((examples[ixex].word_labels, [self.label_pad_token_id]))
-                )
-                # Torch tensors don't support None->NaN, but numpy float ndarrays do:
-                token_label_ids_np = np.array(word_ids, dtype=float)
-                token_label_ids_np[np.isnan(token_label_ids_np)] = n_real_words
-                label_tensors_by_example.append(
-                    torch.index_select(
-                        augmented_example_labels, 0, torch.LongTensor(token_label_ids_np)
-                    )
-                )
-            elif len(label_tensors_by_example):
-                raise ValueError(
-                    "word_labels must be present in all or none of examples in batch, but example "
-                    "%s has no labels" % ixex
-                )
-
-            # Map boxes:
-            # (Boxes have different special values for different special tokens)
-            augmented_example_word_boxes = torch.cat(
-                (
-                    torch.LongTensor(examples[ixex].word_boxes_normalized),
-                    self.special_token_boxes,
-                ),
-                dim=0,
-            )
-            # Torch tensors don't support None->NaN, but numpy float ndarrays do:
-            box_ids_np = np.array(word_ids, dtype=float)
-            box_ids_np = np.where(
-                batch.input_ids[ixex, :] == self.tokenizer.bos_token_id,
-                n_real_words,  # bos_token_box, per special_token_boxes
-                box_ids_np,
-            )
-            box_ids_np = np.where(
-                batch.input_ids[ixex, :] == self.tokenizer.cls_token_id,
-                n_real_words,  # cls_token_box, per special_token_boxes
-                box_ids_np,
-            )
-            box_ids_np = np.where(
-                batch.input_ids[ixex, :] == self.tokenizer.pad_token_id,
-                n_real_words + 1,  # pad_token_box, per special_token_boxes
-                box_ids_np,
-            )
-            box_ids_np = np.where(
-                batch.input_ids[ixex, :] == self.tokenizer.sep_token_id,
-                n_real_words + 2,  # sep_token_box, per special_token_boxes
-                box_ids_np,
-            )
-            bbox_tensors_by_example.append(
-                torch.index_select(
-                    augmented_example_word_boxes,
-                    0,
-                    # By this point all NaNs from special tokens should be resolved so can cast:
-                    torch.LongTensor(box_ids_np.astype(int)),
-                )
-            )
-        batch["bbox"] = torch.stack(bbox_tensors_by_example)
-        if len(label_tensors_by_example):
-            batch["labels"] = torch.stack(label_tensors_by_example)
-
-        # We don't add extra tracability attributes here (e.g. page_num, textract_block_ids) since
-        # the output still has a word_ids() function enabling inference users to do that for
-        # themselves.
-        return batch
-
-
-def word_label_matrix_from_bounding_boxes(
-    textract_blocks: Iterable[
-        Union[
-            trp.Word,
-            trp.Line,
-            trp.SelectionElement,
-            trp.FieldKey,
-            trp.FieldValue,
-            trp.Cell,
-            trp.Table,
-            trp.Page,
-        ]
-    ],
+def word_label_matrix_from_norm_bounding_boxes(
+    boxes: np.array,  # TODO: PyTorch Tensor support?
     smgt_boxes_ann: BoundingBoxAnnotationResult,
     n_classes: int,
 ):
-    """Calculate overlap of Textract (TRP) items with SMGT BBoxes to multi-label word classes
+    """Calculate (multi-label) word classes by overlap of Textract (TRP) items with SMGT BBoxes
 
     Parameters
     ----------
@@ -199,47 +59,68 @@ def word_label_matrix_from_bounding_boxes(
         of the block's area intersects with a bounding box annotation of that class. Note that
         multi-classification is supported so rows may sum to more than 1.
     """
-    word_boxes = [word.geometry.boundingBox for word in textract_blocks]
-    result = np.zeros((len(word_boxes), n_classes))
-    for ixword, wordbox in enumerate(word_boxes):
-        word_area = wordbox.height * wordbox.width
-        for annbox in smgt_boxes_ann.boxes:
-            isect_area = (
-                # Intersection width:
-                max(
-                    0,
-                    # Intersection right:
-                    min(wordbox.left + wordbox.width, annbox.rel_right)
-                    # Minus intersection left:
-                    - max(wordbox.left, annbox.rel_left),
-                )
-                # Intersection height:
-                * max(
-                    0,
-                    # Intersection bottom:
-                    min(wordbox.top + wordbox.height, annbox.rel_bottom)
-                    # Minus intersection top:
-                    - max(wordbox.top, annbox.rel_top),
-                )
-            )
-            if isect_area >= (word_area / 2):
-                result[ixword, annbox.class_id] = 1.0
+    n_words = len(boxes)  # (n_words, 4) 0-1000 x0, y0, x1, y1
+    ann_boxes = smgt_boxes_ann.normalized_boxes()
+    if len(ann_boxes) == 0:
+        # Easier to just catch this case than deal with it later:
+        return np.concatenate(
+            [np.zeros((n_words, n_classes - 1)), np.ones((n_words, 1))],
+            axis=1,
+        )
+    ann_class_ids = np.array([box.class_id for box in smgt_boxes_ann.boxes])
+    n_anns = len(ann_boxes)  # (n_words, 4) 0-1000 x0, y0, x1, y1
+
+    word_widths = boxes[:, 2] - boxes[:, 0]
+    word_heights = boxes[:, 3] - boxes[:, 1]
+    word_areas = word_widths * word_heights
+
+    # We want to produce a matrix (n_words, n_anns) describing overlaps
+    # Note the slicing e.g. boxes[:, 2:3] vs boxes[:, 2] keeps the result a vector instead of 1D
+    # array (as 1D array would mess up the tiling)
+    isects_right = np.minimum(
+        np.tile(boxes[:, 2:3], (1, n_anns)),
+        np.tile(ann_boxes[:, 2:3].transpose(), (n_words, 1)),
+    )
+    isects_left = np.maximum(
+        np.tile(boxes[:, 0:1], (1, n_anns)),
+        np.tile(ann_boxes[:, 0:1].transpose(), (n_words, 1)),
+    )
+    isects_width = np.maximum(0, isects_right - isects_left)
+    isects_bottom = np.minimum(
+        np.tile(boxes[:, 3:4], (1, n_anns)),
+        np.tile(ann_boxes[:, 3:4].transpose(), (n_words, 1)),
+    )
+    isects_top = np.maximum(
+        np.tile(boxes[:, 1:2], (1, n_anns)),
+        np.tile(ann_boxes[:, 1:2].transpose(), (n_words, 1)),
+    )
+    isects_height = np.maximum(0, isects_bottom - isects_top)
+
+    matches = np.where(
+        # (Need to convert word_areas from 1D array to column vector)
+        isects_width * isects_height >= (word_areas / 2)[:, np.newaxis],
+        1.0,
+        0.0,
+    )
+
+    # But `matches` is not the final result: We want a matrix by class IDs, not every bounding box
+    result = np.zeros((n_words, n_classes))
+    # Not aware of any way to do this without looping yet:
+    for class_id in range(n_classes):
+        class_matches = np.any(matches[:, ann_class_ids == class_id], axis=1)
+        result[:, class_id] = class_matches
+    # Implicitly any word with no matches is "other", class n-1:
+    result[:, n_classes - 1] = np.where(
+        np.any(result, axis=1),
+        result[:, n_classes - 1],
+        1.0,
+    )
+
     return result
 
 
-def word_single_labels_from_bounding_boxes(
-    textract_blocks: Iterable[
-        Union[
-            trp.Word,
-            trp.Line,
-            trp.SelectionElement,
-            trp.FieldKey,
-            trp.FieldValue,
-            trp.Cell,
-            trp.Table,
-            trp.Page,
-        ]
-    ],
+def word_single_labels_from_norm_bounding_boxes(
+    boxes: np.array,
     smgt_boxes_ann: BoundingBoxAnnotationResult,
     n_classes: int,
 ):
@@ -250,8 +131,8 @@ def word_single_labels_from_bounding_boxes(
 
     Parameters
     ----------
-    textract_blocks :
-        List-like of TRP objects with a 'geometry' property (e.g. Word, Line, Cell, Page, etc)
+    boxes :
+        Array of normalized LayoutLM-like word bounding boxes
     smgt_boxes_ann :
         Parsed result from a SageMaker Ground Truth Bounding Box annotation job
     n_classes :
@@ -264,7 +145,7 @@ def word_single_labels_from_bounding_boxes(
         (n_textract_blocks,) array of class label integers by word, from 0 to n_classes - 1
         inclusive.
     """
-    word_labels = word_label_matrix_from_bounding_boxes(textract_blocks, smgt_boxes_ann, n_classes)
+    word_labels = word_label_matrix_from_norm_bounding_boxes(boxes, smgt_boxes_ann, n_classes)
     return np.where(
         np.sum(word_labels, axis=1) == 0,
         n_classes - 1,
@@ -272,131 +153,162 @@ def word_single_labels_from_bounding_boxes(
     )
 
 
-class TextractLayoutLMDatasetForTokenClassification(TextractLayoutLMDatasetBase):
-    """PyTorch/Hugging Face dataset for token classification/NER with LayoutLM & Amazon Textract
+def smgt_boxes_to_word_labels(
+    batch: Dict[str, List],  # TODO: Support List[Any]? Union[Dict[List], List[Any]],
+    # TODO: Any way to link to original manifest lines for error diagnostics?
+    annotation_attr: str,
+    n_classes: int,
+):
+    manifest_lines = batch.get("manifest-line")
+    if annotation_attr not in batch:
+        raise ValueError(
+            "Bounding box label attribute '%s' missing from batch%s"
+            % (annotation_attr, f" (batch from manifest line {manifest_lines[0]}")
+        )
+    # TODO: More useful error messages if one fails?
+    annotations = [BoundingBoxAnnotationResult(ann) for ann in batch[annotation_attr]]
+    # print(f"First 'boxes' is {type(batch['boxes'][0])}: {batch['boxes'][0][0]}")
+    word_labels = [
+        word_single_labels_from_norm_bounding_boxes(
+            # Although layoutlm_boxes_from_trp_blocks originally creates these as numpy, they seem
+            # to get converted back to listed lists in the dataset. Therefore re-numpying:
+            np.array(boxes),
+            annotations[i],
+            n_classes,
+        )
+        for i, boxes in enumerate(batch["boxes"])
+    ]
+    result = {k: v for k, v in batch.items()}
+    result["word_labels"] = word_labels
+    return result
 
-    This implementation parses the dataset up-front to calculate an overall length (in number of
-    examples, after splitting any long pages) and enable random access - rather than having to
-    worry about implementing order randomization in a streaming API.
 
-    We assume the dataset (as represented in example_index) fits into available memory for
-    simplicity and performance. If that's not the case, you could consider other options - for
-    example serializing example_index out to disk and reloading entries on-demand in __getitem__.
+@dataclass
+class TextractLayoutLMDataCollatorForWordClassification(
+    LayoutLMDataCollatorMixin,
+    DataCollatorForTokenClassification,
+):
+    """Collator to process (batches of) Examples into batched model inputs
 
-    This dataset operates on JSONLines manifest files with records in the following form:
-
-    record["textract-ref"] : str
-        S3 URI to a response JSON from Amazon Textract (not 'source-ref', because you needed to use
-        that for the actual page image per SMGT).
-    record["page-num"] : int (optional)
-        *1-based* page number of the Textract document that this record refers to
-    record[annnotation_attr] : Dict
-        An annotation record in similar format to what would be generated by a SageMaker Ground
-        Truth Object Detection job, as required to parse a BoundingBoxAnnotationResult
+    For our case, tokenization can happen at the batch level which allows us to pad to the longest
+    sample in batch rather than the overall model max_seq_len. Word splitting is already done by
+    Textract, and some custom logic is required to feed through the bounding box inputs from
+    Textract (at word level) to the model inputs (at token level).
     """
 
-    splitter: ClassVar[Type[ExampleSplitterBase]] = NaiveExampleSplitter
+    def __post_init__(self):
+        self._init_for_layoutlm()
+        # super().__post_init__ not present in this parent class
 
-    def __init__(
-        self,
-        textract_path: str,
-        tokenizer: PreTrainedTokenizerBase,
-        manifest_file_path: str,
-        num_labels: int,
-        annotation_attr: str,
-        textract_prefix: str = "",
-        max_seq_len: int = 512,
-    ):
-        """Initialize a TextractLayoutLMDatasetForTokenClassification
-
-        Arguments
-        ---------
-        num_labels : int
-            Number of entity classes to classify tokens between, *including* the implicit "other"
-            class
-        annotation_attr : str
-            Attribute on the input manifest file where SageMaker Ground Truth-compatible bounding
-            box annotations are stored.
-
-        Additional arguments as per TextractLayoutLMDatasetBase
-        """
-        super().__init__(
-            textract_path,
-            tokenizer,
-            manifest_file_path=manifest_file_path,
-            textract_prefix=textract_prefix,
-            max_seq_len=max_seq_len,
+    def numpy_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
+        raise NotImplementedError(
+            "Custom Textract NER data collator has not been implemented for NumPy"
         )
 
-        self.num_labels = num_labels
-        self.example_index: List[TextractLayoutLMExampleForWordClassification] = []
+    def tf_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
+        raise NotImplementedError(
+            "Custom Textract NER data collator has not been implemented for TensorFlow"
+        )
 
-        # Load the raw manifest data:
-        for ipagespec, pagespec in enumerate(self.dataset_inputs(), start=1):
-            textract_file_path = pagespec["textract-ref"]
-            textract_doc = self.parse_textract_file(textract_file_path)
+    def torch_call(
+        self,
+        batch: Union[Dict[str, List], List[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        if isinstance(batch, list):
+            batch = {k: [ex[k] for ex in batch] for k in batch[0]}
 
-            if "page-num" in pagespec:
-                if len(textract_doc.pages) < pagespec["page-num"]:
-                    raise ValueError(
-                        "".join(
-                            (
-                                "(Manifest line {}) page-num {} out of range of Textract result ",
-                                "pages ({})",
-                            )
-                        ).format(
-                            ipagespec,
-                            pagespec["page-num"],
-                            len(textract_doc.pages),
-                        )
-                    )
-            elif len(textract_doc.pages) != 1:
-                raise ValueError(
-                    "".join(
-                        (
-                            "(Manifest line {}) got {} pages in Textract file (exactly 1 ",
-                            "required when page-num not specified)",
-                        )
-                    ).format(
-                        ipagespec,
-                        len(textract_doc.pages),
-                    )
-                )
-
-            if annotation_attr not in pagespec:
-                raise ValueError(
-                    "(Manifest line {}) annotation_attr '{}' is missing".format(
-                        ipagespec,
-                        annotation_attr,
-                    )
-                )
-            annotation = BoundingBoxAnnotationResult(pagespec[annotation_attr])
-            page = textract_doc.pages[pagespec["page-num"] - 1]  # (page-num is 1-based)
-            words = [word for line in page.lines for word in line.words]
-            word_labels = word_single_labels_from_bounding_boxes(words, annotation, num_labels)
-            word_texts = [word.text for word in words]
-            page_splits = self.splitter.split(
-                word_texts,
-                tokenizer,
-                self.max_content_seq_len,
+        # First tokenize/preprocess the batch, then we'll perform any fixes needed for NER:
+        if self.processor:
+            # Haven't tested this with LayoutLMV2 Processor yet... But it might be close to working
+            # as already checks to see if "labels" and "boxes" have been passed through already by
+            # the tokenizer/processor.
+            raise NotImplementedError(
+                "Custom Textract NER data collator isn't tested with Processors yet... You "
+                "probably don't need to use the collator."
             )
-            for start_word, end_word in page_splits:
-                self.example_index.append(
-                    TextractLayoutLMExampleForWordClassification(
-                        word_boxes_normalized=layoutlm_boxes_from_trp_blocks(
-                            words[start_word:end_word],
-                        ),
-                        word_texts=word_texts[start_word:end_word],
-                        word_labels=word_labels[start_word:end_word],
+        else:
+            tokenized = self.tokenizer(
+                **{k: batch[k] for k in batch if k in self.tokenizer_param_names},
+                return_tensors=self.return_tensors,
+                **self.tokenizer_extra_kwargs,
+            )
+
+        # LayoutLMV1Tokenizer doesn't map through "word_labels", so we need to do it ourselves:
+        # (`labels` is same forward() param for all ForTokenClassification model versions)
+        if "word_labels" in batch and "labels" not in tokenized:
+            label_tensors_by_example = []
+            n_examples = len(batch["text"])
+            n_example_words = [len(words) for words in batch["text"]]
+
+            for ixex in range(n_examples):
+                word_ids = tokenized.word_ids(ixex)
+                n_words = n_example_words[ixex]
+
+                # We map labels by augmenting the list of word labels to include values for the
+                # special tokens, editing the word_ids mapping from tokens->words to match special
+                # tokens to their special values (instead of None), and then applying this set of
+                # indexes to produce the token-wise labels.
+                augmented_example_labels = torch.LongTensor(
+                    np.concatenate((batch["word_labels"][ixex], [self.label_pad_token_id]))
+                )
+                # Torch tensors don't support None->NaN, but numpy float ndarrays do:
+                token_label_ids_np = np.array(word_ids, dtype=float)
+                token_label_ids_np[np.isnan(token_label_ids_np)] = n_words
+                label_tensors_by_example.append(
+                    torch.index_select(
+                        augmented_example_labels, 0, torch.LongTensor(token_label_ids_np)
                     )
                 )
-            logger.debug("(Manifest line %s) generated %s examples", ipagespec, page_splits)
 
-    def __getitem__(self, idx: int) -> TextractLayoutLMExampleForWordClassification:
-        return self.example_index[idx]
+            tokenized["labels"] = torch.stack(label_tensors_by_example)
 
-    def __len__(self) -> int:
-        return len(self.example_index)
+        # LayoutLMV1Tokenizer also doesn't map through "boxes", but this is common across tasks so
+        # it's implemented in the parent mixin:
+        self._map_word_boxes(tokenized, batch["boxes"])
+
+        # We don't add extra tracability attributes here (e.g. page_num, textract_block_ids) since
+        # the output still has a word_ids() function enabling inference users to do that for
+        # themselves at inference time if needed.
+        return tokenized
+
+
+def prepare_dataset(
+    textract_path: str,
+    tokenizer: PreTrainedTokenizerBase,
+    manifest_file_path: str,
+    annotation_attr: str,
+    n_classes: int,
+    images_path: Optional[str] = None,
+    images_prefix: str = "",
+    textract_prefix: str = "",
+    max_seq_len: int = 512,
+    num_workers: Optional[int] = None,
+):
+    ds = prepare_base_dataset(
+        textract_path=textract_path,
+        manifest_file_path=manifest_file_path,
+        images_path=images_path,
+        images_prefix=images_prefix,
+        textract_prefix=textract_prefix,
+        num_workers=num_workers,
+    ).map(
+        smgt_boxes_to_word_labels,
+        batched=True,
+        batch_size=8,
+        fn_kwargs={
+            "annotation_attr": annotation_attr,
+            "n_classes": n_classes,
+        },
+        num_proc=num_workers,
+        desc="Reconciling bounding boxes to Textract words",
+    )
+
+    return split_long_dataset_samples(
+        ds,
+        tokenizer=tokenizer,
+        max_seq_len=max_seq_len,
+        num_workers=num_workers,
+    )
 
 
 def get_metric_computer(
@@ -463,7 +375,8 @@ def get_metric_computer(
         )
         n_examples = probs_raw.shape[0]
         acc = acc_by_example.sum() / n_examples
-        
+        focus_acc = focus_acc_by_example.sum() / n_examples
+
         n_focus_examples = n_focus_tokens_by_example[n_focus_tokens_by_example != 0].shape[0]
         focus_acc = focus_acc_by_example.sum() / n_focus_examples
 
@@ -483,37 +396,71 @@ def get_metric_computer(
 
 def get_task(
     data_args: DataTrainingArguments,
-    tokenizer,
+    tokenizer: PreTrainedTokenizerBase,
+    processor: Optional[ProcessorMixin] = None,
+    n_workers: Optional[int] = None,
 ) -> TaskData:
     """Load datasets and data collators for NER model training"""
-    train_dataset = TextractLayoutLMDatasetForTokenClassification(
+    logger.info("Getting NER datasets")
+    tokenizer_params = signature(tokenizer).parameters
+    use_custom_collator = (processor is None) and ("word_labels" not in tokenizer_params)
+    train_dataset = prepare_dataset(
         data_args.textract,
-        tokenizer,
-        data_args.train,
-        data_args.num_labels,
-        data_args.annotation_attr,
-        max_seq_len=data_args.max_seq_length,
+        tokenizer=tokenizer,
+        manifest_file_path=data_args.train,
+        annotation_attr=data_args.annotation_attr,
+        n_classes=data_args.num_labels,
+        images_path=data_args.images,
+        images_prefix=data_args.images_prefix,
         textract_prefix=data_args.textract_prefix,
+        max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
+        num_workers=n_workers,
     )
-    eval_dataset = (
-        TextractLayoutLMDatasetForTokenClassification(
-            data_args.textract,
-            tokenizer,
-            data_args.validation,
-            data_args.num_labels,
-            data_args.annotation_attr,
+    if not use_custom_collator:
+        train_dataset = tokenize_process_dataset(
+            dataset=train_dataset,
+            tokenizer=tokenizer,
             max_seq_len=data_args.max_seq_length,
-            textract_prefix=data_args.textract_prefix,
+            pad_to_multiple_of=data_args.pad_to_multiple_of,
+            processor=processor,
+            num_workers=n_workers,
         )
-        if data_args.validation
-        else None
-    )
+
+    if data_args.validation:
+        eval_dataset = prepare_dataset(
+            data_args.textract,
+            tokenizer=tokenizer,
+            manifest_file_path=data_args.validation,
+            annotation_attr=data_args.annotation_attr,
+            n_classes=data_args.num_labels,
+            images_path=data_args.images,
+            images_prefix=data_args.images_prefix,
+            textract_prefix=data_args.textract_prefix,
+            max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
+            num_workers=n_workers,
+        )
+        if not use_custom_collator:
+            eval_dataset = tokenize_process_dataset(
+                dataset=eval_dataset,
+                tokenizer=tokenizer,
+                max_seq_len=data_args.max_seq_length,
+                pad_to_multiple_of=data_args.pad_to_multiple_of,
+                processor=processor,
+                num_workers=n_workers,
+            )
+    else:
+        eval_dataset = None
 
     return TaskData(
         train_dataset=train_dataset,
-        data_collator=TextractLayoutLMDataCollatorForWordClassification(
-            tokenizer=tokenizer,
-            pad_to_multiple_of=8,
+        data_collator=(
+            TextractLayoutLMDataCollatorForWordClassification(
+                tokenizer=tokenizer,
+                pad_to_multiple_of=data_args.pad_to_multiple_of,
+                processor=processor,
+            )
+            if use_custom_collator
+            else None
         ),
         eval_dataset=eval_dataset,
         metric_computer=get_metric_computer(data_args.num_labels),
