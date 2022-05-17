@@ -213,7 +213,14 @@ def map_load_text_and_images(
     Output batches will be augmented with:
     - "text": List of word texts
     - "boxes": LayoutLM-normalized bounding boxes per word in "text"
-    - "images": (Optional) PIL image(s) for the example
+    - "images": (Optional) numpy pixel array per image. **Note:** this will be converted to native
+        PyArrow arrays by the `datasets` library, so may appear as plain nested lists in subsequent
+        mappings, which LayoutLMv2Processor won't like (as it expects PIL images or np/pt tensors).
+        Why do we return pixel arrays instead of PIL images? Because at the time of writing,
+        returning PIL images caused deadlock when a custom data collator is used and
+        `dataloader_num_workers > 0`. This was true even if an Image `.copy()` was returned by this
+        function, and even if `splitting.duplicate_batch_record` and `splitting.split_batch_record`
+        were also updated to .copy() duplicated fields where possible.
     """
     if "textract-ref" not in batch:
         raise ValueError(f"Manifest batch at line {idxs[0]} missing required field 'textract-ref'")
@@ -275,7 +282,7 @@ def map_load_text_and_images(
             for img_ref in image_refs_raw
         ]
         output["images"] = [
-            Image.open(path).convert("RGB") if path else None for path in image_paths
+            np.array(Image.open(path).convert("RGB")) if path else None for path in image_paths
         ]
 
     # Since TRP gives us no choice but to load a whole Textract doc at a time (even if manifest
@@ -317,7 +324,9 @@ def map_load_text_and_images(
                             f"Couldn't find thumbnail for page {page_num} of Textract doc "
                             f"{textract_file_path}. Got: {auto_doc_images}"
                         )
-                    output["images"][iout] = Image.open(auto_doc_images[page_num]).convert("RGB")
+                    output["images"][iout] = np.array(
+                        Image.open(auto_doc_images[page_num]).convert("RGB")
+                    )
             else:
                 # This record becomes n_pages records in the output batch:
                 doc_n_pages = len(doc.pages)
@@ -338,7 +347,7 @@ def map_load_text_and_images(
                                 f"{textract_file_path}. Got: {auto_doc_images}"
                             )
                     images_by_page = [
-                        Image.open(auto_doc_images[ix + 1]).convert("RGB")
+                        np.array(Image.open(auto_doc_images[ix + 1]).convert("RGB"))
                         for ix in range(doc_n_pages)
                     ]
                 else:
@@ -574,6 +583,9 @@ def get_batch_tokenize_process_fn(
         processor_param_names = signature(processor).parameters
 
         def map_process(batch: Dict[str, List]) -> BatchEncoding:
+            if "images" in batch and isinstance(batch["images"][0], list):
+                # Processor needs PIL Images or np/pt tensors, but not lists:
+                batch["images"] = [np.array(img) for img in batch["images"]]
             return processor(
                 **{k: batch[k] for k in batch if k in processor_param_names},
                 **tokenizer_kwargs,
@@ -653,6 +665,9 @@ class LayoutLMDataCollatorMixin:
             pad_to_multiple_of=self.pad_to_multiple_of,
             overrides={},
             tokenizer_param_names=self.tokenizer_param_names,
+        )
+        self.processor_param_names = (
+            set(signature(self.processor).parameters) if self.processor else None
         )
 
     def _map_word_boxes(

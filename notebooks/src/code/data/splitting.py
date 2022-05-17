@@ -239,7 +239,7 @@ def map_split_long_samples(
     ----------
     batch :
         Dataset batch to process. Must include "text". Depending on the tokenizer, may also need to
-        include "image", "boxes".
+        include "images", "boxes".
     tokenizer :
         Tokenizer to apply to calculate raw sample lengths
     max_seq_len :
@@ -285,7 +285,7 @@ def map_split_long_samples(
                 n_record_splits,
                 splits,
             )
-            batch = split_batch_record(batch, ix, splits, exclude_features=set(("image",)))
+            batch = split_batch_record(batch, ix, splits, exclude_features=set(("images",)))
             input_to_output = input_to_output[0 : iin + 1] + [
                 ix + n_record_splits - 1 for ix in input_to_output[iin + 1 :]
             ]

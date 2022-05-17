@@ -12,6 +12,7 @@ from logging import getLogger
 from typing import Any, Dict, List, Optional, Union
 
 # External Dependencies:
+import numpy as np
 from transformers.data.data_collator import DataCollatorForLanguageModeling
 from transformers.processing_utils import ProcessorMixin
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -63,10 +64,14 @@ class TextractLayoutLMDataCollatorForLanguageModelling(
             batch = batch
 
         if self.processor:
-            # Haven't tested this with LayoutLMV2 Processor yet... But it might be close to working
-            # as already checks to see "boxes" have been passed through by the tokenizer/processor.
-            raise NotImplementedError(
-                "Custom Textract MLM data collator isn't tested with Processors yet."
+            if "images" in batch and isinstance(batch["images"][0], list):
+                # Processor needs PIL Images or np/pt tensors, but not lists:
+                # (PIL->PyTorch conversion will go via numpy anyway)
+                batch["images"] = [np.array(img) for img in batch["images"]]
+            tokenized = self.processor(
+                **{k: batch[k] for k in batch if k in self.processor_param_names},
+                return_tensors=self.return_tensors,
+                **self.tokenizer_extra_kwargs,
             )
         else:
             tokenized = self.tokenizer(
