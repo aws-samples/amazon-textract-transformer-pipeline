@@ -381,6 +381,7 @@ def prepare_base_dataset(
     images_prefix: str = "",
     textract_prefix: str = "",
     num_workers: Optional[int] = None,
+    cache_dir: Optional[str] = None,
 ) -> datasets.Dataset:
     """Prepare a base datasets.Dataset **without** splitting long samples
 
@@ -403,6 +404,9 @@ def prepare_base_dataset(
         `textract_path`
     num_workers :
         Number of parallel worker threads to use for loading the dataset.
+    cache_dir :
+        Folder to cache intermediate dataset PyArrow files in (ensure this is under a SageMaker EBS
+        mount to avoid running out of space on the root device and failing the training job!)
     """
     if not os.path.isdir(textract_path):
         raise ValueError("textract_path '%s' is not a valid folder" % textract_path)
@@ -417,6 +421,7 @@ def prepare_base_dataset(
                 "json",
                 data_files=manifest_file_path,
                 split=datasets.Split.ALL,
+                cache_dir=cache_dir,
             )
         else:
             if not os.path.isdir(manifest_file_path):
@@ -426,6 +431,7 @@ def prepare_base_dataset(
             ds_raw = datasets.load_dataset(
                 manifest_file_path,
                 split=datasets.Split.ALL,
+                cache_dir=cache_dir,
             )
     else:
         ds_raw = datasets.Dataset.from_dict(
@@ -435,7 +441,8 @@ def prepare_base_dataset(
                     for currpath, _, files in os.walk(textract_path)
                     for file in files
                 ]
-            }
+            },
+            cache_dir=cache_dir,
         )
 
     return ds_raw.map(

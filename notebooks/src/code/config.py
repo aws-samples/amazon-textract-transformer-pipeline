@@ -49,6 +49,16 @@ class SageMakerTrainingArguments(TrainingArguments):
             ),
         },
     )
+    dataproc_num_workers: Optional[int] = field(
+        # TODO: Is this further throttling by default vs dataloader necessary?
+        default=min(12, get_default_num_workers()),
+        metadata={
+            "help": (
+                "Number of subprocesses to use for data preparation before training commences. "
+                "0 means that the data will be loaded in the main process (Good for debug)."
+            ),
+        },
+    )
     disable_tqdm: Optional[bool] = field(
         # Log streams can't render progress bars like a GUI terminal
         default=True,
@@ -150,6 +160,9 @@ class SageMakerTrainingArguments(TrainingArguments):
 
     def __post_init__(self):
         super().__post_init__()
+        # HF datasets library requires n_proc = None, not 0, if workers are disabled:
+        if not self.dataproc_num_workers:
+            self.dataproc_num_workers = None
         # Normalize early stopping configuration if it seems enabled:
         if self.early_stopping_patience is not None or self.early_stopping_threshold is not None:
             # The EarlyStoppingCallback requires load_best_model_at_end=True:

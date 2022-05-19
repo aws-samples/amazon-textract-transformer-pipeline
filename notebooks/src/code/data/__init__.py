@@ -22,11 +22,17 @@ def get_datasets(
     data_args: DataTrainingArguments,
     tokenizer: PreTrainedTokenizerBase,
     processor: Optional[ProcessorMixin] = None,
+    n_workers: Optional[int] = None,
+    cache_dir: Optional[str] = None,
 ) -> TaskData:
     """Load datasets and data collators for model pre/training"""
     if data_args.task_name == "mlm":
-        return get_mlm_task(data_args, tokenizer, processor)
+        return get_mlm_task(
+            data_args, tokenizer, processor, n_workers=n_workers, cache_dir=cache_dir
+        )
     elif data_args.task_name == "ner":
-        return get_ner_task(data_args, tokenizer, processor)
+        return get_ner_task(
+            data_args, tokenizer, processor, n_workers=n_workers, cache_dir=cache_dir
+        )
     else:
         raise ValueError("Unknown task '%s' is not 'mlm' or 'ner'" % data_args.task_name)

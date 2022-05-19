@@ -109,6 +109,7 @@ def prepare_dataset(
     textract_prefix: str = "",
     max_seq_len: int = 512,
     num_workers: Optional[int] = None,
+    cache_dir: Optional[str] = None,
 ):
     return split_long_dataset_samples(
         prepare_base_dataset(
@@ -118,6 +119,7 @@ def prepare_dataset(
             images_prefix=images_prefix,
             textract_prefix=textract_prefix,
             num_workers=num_workers,
+            cache_dir=cache_dir,
         ),
         tokenizer=tokenizer,
         max_seq_len=max_seq_len,
@@ -130,6 +132,7 @@ def get_task(
     tokenizer: PreTrainedTokenizerBase,
     processor: Optional[ProcessorMixin] = None,
     n_workers: Optional[int] = None,
+    cache_dir: Optional[str] = None,
 ) -> TaskData:
     """Load datasets and data collators for MLM model training"""
     logger.info("Getting MLM datasets")
@@ -142,6 +145,7 @@ def get_task(
         textract_prefix=data_args.textract_prefix,
         max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
         num_workers=n_workers,
+        cache_dir=cache_dir,
     )
     logger.info("Train dataset: %s", train_dataset)
 
@@ -155,6 +159,7 @@ def get_task(
             textract_prefix=data_args.textract_prefix,
             max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
             num_workers=n_workers,
+            cache_dir=cache_dir,
         )
     else:
         eval_dataset = None

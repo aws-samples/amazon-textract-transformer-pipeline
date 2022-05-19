@@ -10,7 +10,7 @@ extracted by Textract, to classify each WORD to an entity type (or 'other' if no
 from dataclasses import dataclass
 from inspect import signature
 from numbers import Real
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 # External Dependencies:
 import numpy as np
@@ -283,6 +283,7 @@ def prepare_dataset(
     textract_prefix: str = "",
     max_seq_len: int = 512,
     num_workers: Optional[int] = None,
+    cache_dir: Optional[str] = None,
 ):
     ds = prepare_base_dataset(
         textract_path=textract_path,
@@ -291,6 +292,7 @@ def prepare_dataset(
         images_prefix=images_prefix,
         textract_prefix=textract_prefix,
         num_workers=num_workers,
+        cache_dir=cache_dir,
     ).map(
         smgt_boxes_to_word_labels,
         batched=True,
@@ -399,6 +401,7 @@ def get_task(
     tokenizer: PreTrainedTokenizerBase,
     processor: Optional[ProcessorMixin] = None,
     n_workers: Optional[int] = None,
+    cache_dir: Optional[str] = None,
 ) -> TaskData:
     """Load datasets and data collators for NER model training"""
     logger.info("Getting NER datasets")
@@ -415,6 +418,7 @@ def get_task(
         textract_prefix=data_args.textract_prefix,
         max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
         num_workers=n_workers,
+        cache_dir=cache_dir,
     )
     if not use_custom_collator:
         train_dataset = tokenize_process_dataset(
@@ -438,6 +442,7 @@ def get_task(
             textract_prefix=data_args.textract_prefix,
             max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
             num_workers=n_workers,
+            cache_dir=cache_dir,
         )
         if not use_custom_collator:
             eval_dataset = tokenize_process_dataset(

@@ -7,6 +7,7 @@ import os
 import shutil
 
 # External Dependencies:
+from torch import distributed as dist
 from transformers import (
     AutoConfig,
     AutoModelForMaskedLM,
@@ -14,6 +15,7 @@ from transformers import (
     AutoProcessor,
     AutoTokenizer,
     EarlyStoppingCallback,
+    LayoutLMv2Config,
     LayoutXLMProcessor,
     LayoutXLMTokenizerFast,
     PreTrainedTokenizerFast,
@@ -27,12 +29,12 @@ from transformers.trainer_utils import get_last_checkpoint
 from . import config
 from . import data
 from . import logging_utils
-
+from .models.layoutlmv2 import LayoutLMv2ForMaskedLM
 
 logger = logging_utils.getLogger("main")
 
 
-def get_model(model_args, data_args):
+def get_model(model_args: config.ModelArguments, data_args: config.DataTrainingArguments):
     """Load pre-trained Config, Model and Tokenizer"""
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
@@ -128,14 +130,29 @@ def get_model(model_args, data_args):
             use_auth_token=True if model_args.use_auth_token else None,
         )
     elif data_args.task_name == "mlm":
-        model = AutoModelForMaskedLM.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
-        )
+        if isinstance(config, LayoutLMv2Config):
+            logger.info(
+                "As of v4.18, HF transformers does not bundle a variant of LayoutLMv2/XLM for "
+                "pre-training. Using a basic custom implementation inspired by v1, which is "
+                "simpler than the full LLMv2/XLM pre-training objective."
+            )
+            model = LayoutLMv2ForMaskedLM.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+                revision=model_args.model_revision,
+                use_auth_token=True if model_args.use_auth_token else None,
+            )
+        else:
+            model = AutoModelForMaskedLM.from_pretrained(
+                model_args.model_name_or_path,
+                from_tf=bool(".ckpt" in model_args.model_name_or_path),
+                config=config,
+                cache_dir=model_args.cache_dir,
+                revision=model_args.model_revision,
+                use_auth_token=True if model_args.use_auth_token else None,
+            )
     else:
         raise ValueError(
             f"Unknown data_args.task_name '{data_args.task_name}' not in ('mlm', 'ner')"
@@ -143,9 +160,32 @@ def get_model(model_args, data_args):
     return config, model, tokenizer, processor
 
 
-def train(model_args, data_args, training_args):
+def train(
+    model_args: config.ModelArguments,
+    data_args: config.DataTrainingArguments,
+    training_args: config.SageMakerTrainingArguments,
+):
     logger.info("Creating config and model")
     _, model, tokenizer, processor = get_model(model_args, data_args)
+
+    if hasattr(model, "layoutlmv2") and training_args.n_gpu > 1:
+        training_args._setup_devices  # Force distributed setup if not already done
+        if dist.is_initialized():
+            logger.info("Synchronizing LayoutLMv2 visual batch norm for distributed training")
+            model.layoutlmv2.visual.synchronize_batch_norm()
+        else:
+            raise ValueError(
+                "For multi-GPU training, LayoutLMv2/XLM must be run in Distributed Data Parallel "
+                "mode (PyTorch native or SageMaker Distributed). Consider using SM DDP on a "
+                "supported instance type (e.g. ml.p3.16xlarge), or training with a single GPU."
+            )
+            # For more information, see:
+            # https://github.com/NielsRogge/Transformers-Tutorials/issues/30
+            # https://github.com/huggingface/transformers/issues/14110
+            # https://sagemaker.readthedocs.io/en/stable/api/training/smd_data_parallel_use_sm_pysdk.html
+            # For other instance types where SageMaker Distributed Data Parallel is not available
+            # (e.g. p3.8xlarge, g4dn), it should be possible to launch this script in PyTorch DDP
+            # mode - but would require some extra configuration.
 
     # Tokenizer check: this script requires a fast tokenizer.
     if not isinstance(tokenizer, PreTrainedTokenizerFast):
@@ -153,17 +193,6 @@ def train(model_args, data_args, training_args):
             "This example script only works for models that have a fast tokenizer. See the list "
             "at https://huggingface.co/transformers/index.html#supported-frameworks for details."
         )
-
-    logger.info("Loading datasets")
-    datasets = data.get_datasets(data_args, tokenizer, processor)
-    if datasets.train_dataset:
-        logger.info(f"train dataset has {len(datasets.train_dataset)} samples")
-    else:
-        logger.info("No training dataset provided")
-    if datasets.eval_dataset:
-        logger.info(f"validation dataset has {len(datasets.eval_dataset)} samples")
-    else:
-        logger.info("No validation dataset provided")
 
     # Detecting last checkpoint.
     last_checkpoint = None
@@ -176,6 +205,30 @@ def train(model_args, data_args, training_args):
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this "
                 "behavior, create the training job with an empty `checkpoint_s3_uri` or none."
             )
+
+    if training_args.local_rank not in [-1, 0]:
+        logger.info("Waiting for main process to prepare datasets")
+        dist.barrier()
+    logger.info("Loading datasets")
+    datasets = data.get_datasets(
+        data_args,
+        tokenizer,
+        processor,
+        n_workers=training_args.dataproc_num_workers,
+        cache_dir=model_args.cache_dir,
+    )
+
+    if datasets.train_dataset:
+        logger.info(f"train dataset has {len(datasets.train_dataset)} samples")
+    else:
+        logger.info("No training dataset provided")
+    if datasets.eval_dataset:
+        logger.info(f"validation dataset has {len(datasets.eval_dataset)} samples")
+    else:
+        logger.info("No validation dataset provided")
+
+    if training_args.local_rank == 0:
+        dist.barrier()
 
     logger.info("Setting up trainer")
     trainer = Trainer(
