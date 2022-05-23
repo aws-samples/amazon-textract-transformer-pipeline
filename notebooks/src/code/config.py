@@ -59,6 +59,16 @@ class SageMakerTrainingArguments(TrainingArguments):
             ),
         },
     )
+    ddp_find_unused_parameters: Optional[bool] = field(
+        default=True,
+        metadata={
+            "help": (
+                "For DistributedDataParallel training, LayoutLMv2/XLM require "
+                "find_unused_parameters=True because of unused parameters in the model structure. "
+                "For LLMv1 in DDP mode you could turn this off for a performance boost."
+            )
+        },
+    )
     disable_tqdm: Optional[bool] = field(
         # Log streams can't render progress bars like a GUI terminal
         default=True,

@@ -20,7 +20,6 @@ from transformers import (
     LayoutXLMTokenizerFast,
     PreTrainedTokenizerFast,
     set_seed,
-    Trainer,
 )
 from transformers.file_utils import EntryNotFoundError
 from transformers.trainer_utils import get_last_checkpoint
@@ -29,6 +28,7 @@ from transformers.trainer_utils import get_last_checkpoint
 from . import config
 from . import data
 from . import logging_utils
+from .smddpfix import Trainer
 from .models.layoutlmv2 import LayoutLMv2ForMaskedLM
 
 logger = logging_utils.getLogger("main")
