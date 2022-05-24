@@ -4,7 +4,7 @@
 
 In this "Amazon Textract Transformer Pipeline" sample and accompanying [blog post](https://aws.amazon.com/blogs/machine-learning/bring-structure-to-diverse-documents-with-amazon-textract-and-transformer-based-models-on-amazon-sagemaker/), we show how you can also automate more complex and domain-specific extraction tasks by integrating trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/).
 
-We demonstrate **layout-aware entity extraction** on an example use case in finance, for which you could also consider using [Amazon Comprehend's native document analysis feature](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/).
+We demonstrate **multi-modal, layout-aware entity extraction** on an example use case in finance, for which you could also consider using [Amazon Comprehend's native document analysis feature](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/) or [Amazon Textract Queries](https://aws.amazon.com/about-aws/whats-new/2022/04/amazon-textract-launches-queries-feature-analyze-document-api/).
 
 However, this pipeline provides a framework you could further extend or customize for your own datasets and ML-based, OCR post-processing models.
 
@@ -26,7 +26,7 @@ For some use cases, incoming documents are highly variable so simple position-ba
 - In commercial business documents, the **name of the vendor** may often be present in front-matter or headers, but usually not specifically labelled e.g. as `Vendor:` - which might help Textract's Key-Value feature extract it.
 - For detecting **subheadings within documents**, it may be possible to write general rules based on text size and relative position - but these could grow very complex if considering, for example, documents with multiple columns or high variability in text size.
 
-In all these cases and others like them, it may be useful to apply an ML model that **jointly** considers the text itself, and its position on the page.
+In all these cases and others like them, it may be useful to apply an ML model that **jointly** considers the text itself, its position on the page - and perhaps other formatting information too.
 
 
 ## Solution Overview
