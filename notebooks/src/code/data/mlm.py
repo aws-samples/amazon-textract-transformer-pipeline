@@ -9,6 +9,7 @@ their pre-training task #2 "multi-label document classification".
 # Python Built-Ins:
 from dataclasses import dataclass
 from logging import getLogger
+import os
 from typing import Any, Dict, List, Optional, Union
 
 # External Dependencies:
@@ -109,7 +110,9 @@ def prepare_dataset(
     textract_prefix: str = "",
     max_seq_len: int = 512,
     num_workers: Optional[int] = None,
+    batch_size: int = 16,
     cache_dir: Optional[str] = None,
+    cache_file_prefix: Optional[str] = None,
 ):
     return split_long_dataset_samples(
         prepare_base_dataset(
@@ -119,11 +122,23 @@ def prepare_dataset(
             images_prefix=images_prefix,
             textract_prefix=textract_prefix,
             num_workers=num_workers,
+            batch_size=batch_size,
             cache_dir=cache_dir,
+            map_cache_file_name=(
+                os.path.join(cache_dir, f"{cache_file_prefix}_1base.arrow")
+                if (cache_dir and cache_file_prefix)
+                else None
+            ),
         ),
         tokenizer=tokenizer,
         max_seq_len=max_seq_len,
         num_workers=num_workers,
+        batch_size=batch_size,
+        cache_file_name=(
+            os.path.join(cache_dir, f"{cache_file_prefix}_2label.arrow")
+            if (cache_dir and cache_file_prefix)
+            else None
+        ),
     )
 
 
@@ -145,9 +160,11 @@ def get_task(
         textract_prefix=data_args.textract_prefix,
         max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
         num_workers=n_workers,
+        batch_size=data_args.dataproc_batch_size,
         cache_dir=cache_dir,
+        cache_file_prefix="mlmtrain",
     )
-    logger.info("Train dataset: %s", train_dataset)
+    logger.info("Train dataset ready: %s", train_dataset)
 
     if data_args.validation:
         eval_dataset = prepare_dataset(
@@ -159,8 +176,11 @@ def get_task(
             textract_prefix=data_args.textract_prefix,
             max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
             num_workers=n_workers,
+            batch_size=data_args.dataproc_batch_size,
             cache_dir=cache_dir,
+            cache_file_prefix="mlmval",
         )
+        logger.info("Validation dataset ready: %s", eval_dataset)
     else:
         eval_dataset = None
 

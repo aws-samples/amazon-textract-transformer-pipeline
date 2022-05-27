@@ -272,6 +272,10 @@ def map_split_long_samples(
         max_content_seq_len=max_seq_len,
     )
 
+    # Ensure that even if no samples need splitting, we return a shallow copy rather than the
+    # original batch object (not doing this was observed to cause problems in datasets 2.2.1):
+    batch = {k: [val for val in v] for k, v in batch.items()}
+
     input_n_records = len(batch["text"])
     input_to_output = list(range(input_n_records))
     for iin, splits in enumerate(batch_splits):

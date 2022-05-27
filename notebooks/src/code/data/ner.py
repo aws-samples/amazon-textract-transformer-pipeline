@@ -8,8 +8,8 @@ extracted by Textract, to classify each WORD to an entity type (or 'other' if no
 """
 # Python Built-Ins:
 from dataclasses import dataclass
-from inspect import signature
 from numbers import Real
+import os
 from typing import Any, Callable, Dict, List, Optional, Union
 
 # External Dependencies:
@@ -40,7 +40,7 @@ def word_label_matrix_from_norm_bounding_boxes(
     boxes: np.array,  # TODO: PyTorch Tensor support?
     smgt_boxes_ann: BoundingBoxAnnotationResult,
     n_classes: int,
-):
+) -> np.ndarray:
     """Calculate (multi-label) word classes by overlap of Textract (TRP) items with SMGT BBoxes
 
     Parameters
@@ -60,7 +60,7 @@ def word_label_matrix_from_norm_bounding_boxes(
         multi-classification is supported so rows may sum to more than 1.
     """
     n_words = len(boxes)  # (n_words, 4) 0-1000 x0, y0, x1, y1
-    ann_boxes = smgt_boxes_ann.normalized_boxes()
+    ann_boxes = smgt_boxes_ann.normalized_boxes(return_tensors="np")
     if len(ann_boxes) == 0:
         # Easier to just catch this case than deal with it later:
         return np.concatenate(
@@ -153,12 +153,13 @@ def word_single_labels_from_norm_bounding_boxes(
     )
 
 
-def smgt_boxes_to_word_labels(
+def map_smgt_boxes_to_word_labels(
     batch: Dict[str, List],  # TODO: Support List[Any]? Union[Dict[List], List[Any]],
     # TODO: Any way to link to original manifest lines for error diagnostics?
     annotation_attr: str,
     n_classes: int,
 ):
+    """datasets.map function to tag "word_labels" from word "boxes" and SMGT bbox annotation data"""
     manifest_lines = batch.get("manifest-line")
     if annotation_attr not in batch:
         raise ValueError(
@@ -167,7 +168,6 @@ def smgt_boxes_to_word_labels(
         )
     # TODO: More useful error messages if one fails?
     annotations = [BoundingBoxAnnotationResult(ann) for ann in batch[annotation_attr]]
-    # print(f"First 'boxes' is {type(batch['boxes'][0])}: {batch['boxes'][0][0]}")
     word_labels = [
         word_single_labels_from_norm_bounding_boxes(
             # Although layoutlm_boxes_from_trp_blocks originally creates these as numpy, they seem
@@ -219,12 +219,14 @@ class TextractLayoutLMDataCollatorForWordClassification(
 
         # First tokenize/preprocess the batch, then we'll perform any fixes needed for NER:
         if self.processor:
-            # Haven't tested this with LayoutLMV2 Processor yet... But it might be close to working
-            # as already checks to see if "labels" and "boxes" have been passed through already by
-            # the tokenizer/processor.
-            raise NotImplementedError(
-                "Custom Textract NER data collator isn't tested with Processors yet... You "
-                "probably don't need to use the collator."
+            if "images" in batch and isinstance(batch["images"][0], list):
+                # Processor needs PIL Images or np/pt tensors, but not lists:
+                # (PIL->PyTorch conversion will go via numpy anyway)
+                batch["images"] = [np.array(img) for img in batch["images"]]
+            tokenized = self.processor(
+                **{k: batch[k] for k in batch if k in self.processor_param_names},
+                return_tensors=self.return_tensors,
+                **self.tokenizer_extra_kwargs,
             )
         else:
             tokenized = self.tokenizer(
@@ -283,7 +285,9 @@ def prepare_dataset(
     textract_prefix: str = "",
     max_seq_len: int = 512,
     num_workers: Optional[int] = None,
+    batch_size: int = 16,
     cache_dir: Optional[str] = None,
+    cache_file_prefix: Optional[str] = None,
 ):
     ds = prepare_base_dataset(
         textract_path=textract_path,
@@ -292,17 +296,28 @@ def prepare_dataset(
         images_prefix=images_prefix,
         textract_prefix=textract_prefix,
         num_workers=num_workers,
+        batch_size=batch_size,
         cache_dir=cache_dir,
+        map_cache_file_name=(
+            os.path.join(cache_dir, f"{cache_file_prefix}_1base.arrow")
+            if (cache_dir and cache_file_prefix)
+            else None
+        ),
     ).map(
-        smgt_boxes_to_word_labels,
+        map_smgt_boxes_to_word_labels,
         batched=True,
-        batch_size=8,
+        batch_size=batch_size,
         fn_kwargs={
             "annotation_attr": annotation_attr,
             "n_classes": n_classes,
         },
         num_proc=num_workers,
         desc="Reconciling bounding boxes to Textract words",
+        cache_file_name=(
+            os.path.join(cache_dir, f"{cache_file_prefix}_2label.arrow")
+            if (cache_dir and cache_file_prefix)
+            else None
+        ),
     )
 
     return split_long_dataset_samples(
@@ -310,6 +325,12 @@ def prepare_dataset(
         tokenizer=tokenizer,
         max_seq_len=max_seq_len,
         num_workers=num_workers,
+        batch_size=batch_size,
+        cache_file_name=(
+            os.path.join(cache_dir, f"{cache_file_prefix}_3split.arrow")
+            if (cache_dir and cache_file_prefix)
+            else None
+        ),
     )
 
 
@@ -405,8 +426,12 @@ def get_task(
 ) -> TaskData:
     """Load datasets and data collators for NER model training"""
     logger.info("Getting NER datasets")
-    tokenizer_params = signature(tokenizer).parameters
-    use_custom_collator = (processor is None) and ("word_labels" not in tokenizer_params)
+
+    # Pre-processing up-front is a deprecated path that's only supported for processors (LLMv2+)
+    # and when explicitly enabled... but kept around until we can diagnose and fix why the custom
+    # collator path sometimes gets a few pct lower accuracy:
+    use_custom_collator = not (bool(processor) and data_args.force_ner_preprocess)
+
     train_dataset = prepare_dataset(
         data_args.textract,
         tokenizer=tokenizer,
@@ -418,17 +443,23 @@ def get_task(
         textract_prefix=data_args.textract_prefix,
         max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
         num_workers=n_workers,
+        batch_size=data_args.dataproc_batch_size,
         cache_dir=cache_dir,
+        cache_file_prefix="nertrain",
     )
     if not use_custom_collator:
         train_dataset = tokenize_process_dataset(
             dataset=train_dataset,
             tokenizer=tokenizer,
             max_seq_len=data_args.max_seq_length,
-            pad_to_multiple_of=data_args.pad_to_multiple_of,
             processor=processor,
             num_workers=n_workers,
+            batch_size=data_args.dataproc_batch_size,
+            cache_file_name=(
+                os.path.join(cache_dir, "nertrain_4token.arrow") if (cache_dir) else None
+            ),
         )
+    logger.info("Train dataset ready: %s", train_dataset)
 
     if data_args.validation:
         eval_dataset = prepare_dataset(
@@ -442,17 +473,23 @@ def get_task(
             textract_prefix=data_args.textract_prefix,
             max_seq_len=data_args.max_seq_length - 2,  # To allow for CLS+SEP in final
             num_workers=n_workers,
+            batch_size=data_args.dataproc_batch_size,
             cache_dir=cache_dir,
+            cache_file_prefix="nerval",
         )
         if not use_custom_collator:
             eval_dataset = tokenize_process_dataset(
                 dataset=eval_dataset,
                 tokenizer=tokenizer,
                 max_seq_len=data_args.max_seq_length,
-                pad_to_multiple_of=data_args.pad_to_multiple_of,
                 processor=processor,
                 num_workers=n_workers,
+                batch_size=data_args.dataproc_batch_size,
+                cache_file_name=(
+                    os.path.join(cache_dir, "nerval_4token.arrow") if (cache_dir) else None
+                ),
             )
+        logger.info("Validation dataset ready: %s", eval_dataset)
     else:
         eval_dataset = None
 

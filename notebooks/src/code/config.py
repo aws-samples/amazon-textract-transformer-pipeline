@@ -10,14 +10,26 @@ import tarfile
 from typing import Optional
 
 # External Dependencies:
+try:
+    from datasets import disable_progress_bar as disable_datasets_progress_bar
+except ImportError:  # Not available in datasets <v2.0.0
+    disable_datasets_progress_bar = None
 from transformers import HfArgumentParser, TrainingArguments
 from transformers.trainer_utils import IntervalStrategy
 
 
+def get_n_cpus():
+    return int(os.environ.get("SM_NUM_CPUS", len(os.sched_getaffinity(0))))
+
+
+def get_n_gpus():
+    return int(os.environ.get("SM_NUM_GPUS", 0))
+
+
 def get_default_num_workers():
     """Choose a sensible default dataloader_num_workers based on available hardware"""
-    n_cpus = int(os.environ.get("SM_NUM_CPUS", len(os.sched_getaffinity(0))))
-    n_gpus = int(os.environ.get("SM_NUM_GPUS", 0))
+    n_cpus = get_n_cpus()
+    n_gpus = get_n_gpus()
     # Don't create so many workers you lock all processes into resource contention:
     max_workers = max(0, n_cpus - 2)
     if n_gpus:
@@ -50,8 +62,10 @@ class SageMakerTrainingArguments(TrainingArguments):
         },
     )
     dataproc_num_workers: Optional[int] = field(
-        # TODO: Is this further throttling by default vs dataloader necessary?
-        default=min(12, get_default_num_workers()),
+        # Our data pre-processing is explicitly configured to run in the lead process and then load
+        # from cache for other processes - so we can use lots of workers because the lead proc will
+        # be running it alone:
+        default=max(1, get_n_cpus() - 2),
         metadata={
             "help": (
                 "Number of subprocesses to use for data preparation before training commences. "
@@ -71,6 +85,7 @@ class SageMakerTrainingArguments(TrainingArguments):
     )
     disable_tqdm: Optional[bool] = field(
         # Log streams can't render progress bars like a GUI terminal
+        # NOTE: If you run into problems debugging dataset prep, you may like to enable progress
         default=True,
         metadata={"help": "TQDM progress bars are disabled by default for SageMaker/CloudWatch."},
     )
@@ -173,6 +188,9 @@ class SageMakerTrainingArguments(TrainingArguments):
         # HF datasets library requires n_proc = None, not 0, if workers are disabled:
         if not self.dataproc_num_workers:
             self.dataproc_num_workers = None
+        # ...And it doesn't see the TrainingArguments progress setting by default:
+        if self.disable_tqdm and disable_datasets_progress_bar:
+            disable_datasets_progress_bar()
         # Normalize early stopping configuration if it seems enabled:
         if self.early_stopping_patience is not None or self.early_stopping_threshold is not None:
             # The EarlyStoppingCallback requires load_best_model_at_end=True:
@@ -276,6 +294,14 @@ class DataTrainingArguments:
         default="labels",
         metadata={"help": "Attribute name of the annotations in the manifest file"},
     )
+    dataproc_batch_size: int = field(
+        default=16,
+        metadata={
+            # RAM usage in tests on p3/g4dn instances suggests this could probably be much higher
+            # if needed, but I'm not sure whether it'd actually improve speed.
+            "help": "Base batch size for (up-front, before training) data pre-processing."
+        },
+    )
     max_seq_length: Optional[int] = field(
         default=512,
         metadata={
@@ -321,6 +347,15 @@ class DataTrainingArguments:
     )
 
     # NER (token classification) specific parameters:
+    force_ner_preprocess: bool = field(
+        default=False,
+        metadata={
+            "help": "Set True to force up-front tokenization of NER datasets, instead of the "
+            "default per-minibatch tokenization. Typically slows down training, but has been "
+            "observed to boost accuracy for reasons undiagnosed. (DEPRECATED, hopefully we can "
+            "understand the accuracy issue and remove this."
+        },
+    )
     num_labels: Optional[int] = field(
         default=2,
         metadata={"help": "Number of entity classes (including 'other/none')"},

@@ -23,8 +23,9 @@ RUN pip install "amazon-textract-response-parser>=0.1,<0.2" "Pillow>=8,<9" \
 # - pytesseract shouldn't be necessary after Transformers v4.18 (because we don't use Tesseract
 #   OCR), but older versions have a bug: https://github.com/huggingface/transformers/issues/16845
 # - datasets 1.18 and torchvision 0.11 are installed in the HF training container but missing from
-#   the inference container, and we need them for inference.
-RUN pip install pytesseract "datasets>=1.18.4,<1.19" "torchvision>=0.11.3,<0.12"
+#   the inference container, and we need them for inference. Upgraded datasets to use some new
+#   logging controls and debug multi-worker .map() pre-processing:
+RUN pip install pytesseract "datasets==2.2.1" "torchvision>=0.11.3,<0.12"
 
 
 # If you'd like to enable this container as a Custom Image for notebook kernels, for debugging in

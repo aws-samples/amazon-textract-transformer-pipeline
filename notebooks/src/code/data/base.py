@@ -11,7 +11,7 @@ import json
 from numbers import Real
 import os
 import re
-from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 # External Dependencies:
 import datasets
@@ -371,6 +371,17 @@ def map_load_text_and_images(
                     ix + doc_n_pages - 1 for ix in input_to_output[i + 1 :]
                 ]
 
+    # Drop any pages/examples that have no text content at all:
+    has_content = [
+        len(text) > 0 and len(output["boxes"][ix]) > 0 for ix, text in enumerate(output["text"])
+    ]
+    n_missing_content = len(has_content) - sum(has_content)
+    if n_missing_content > 0:
+        logger.info("Dropping %s samples with no text content", n_missing_content)
+        output = {
+            k: [v[ix] for ix, keep in enumerate(has_content) if keep] for k, v in output.items()
+        }
+
     return output
 
 
@@ -381,7 +392,9 @@ def prepare_base_dataset(
     images_prefix: str = "",
     textract_prefix: str = "",
     num_workers: Optional[int] = None,
+    batch_size: int = 16,
     cache_dir: Optional[str] = None,
+    map_cache_file_name: Optional[str] = None,
 ) -> datasets.Dataset:
     """Prepare a base datasets.Dataset **without** splitting long samples
 
@@ -428,8 +441,25 @@ def prepare_base_dataset(
                 raise ValueError(
                     f"Data manifest '{manifest_file_path}' is not a local file or folder"
                 )
+            # Fix for load_dataset() appearing to duplicate records in some cases:
+            # Instead of loading all files in the folder with something like the below...
+            #
+            #   ds_raw = datasets.load_dataset(
+            #       manifest_file_path,
+            #       split=datasets.Split.ALL,
+            #       cache_dir=cache_dir,
+            #   )
+            #
+            # ...Explicitly filter out paths with '/.' in them to remove any stray
+            # .ipynb_checkpoints folders that might have been loaded to S3 and our job:
             ds_raw = datasets.load_dataset(
-                manifest_file_path,
+                "json",
+                data_files=[
+                    os.path.join(currdir, f)
+                    for currdir, _, files in os.walk(manifest_file_path)
+                    for f in files
+                    if "/." not in currdir
+                ],
                 split=datasets.Split.ALL,
                 cache_dir=cache_dir,
             )
@@ -445,11 +475,13 @@ def prepare_base_dataset(
             cache_dir=cache_dir,
         )
 
+    if not datasets.utils.is_progress_bar_enabled():
+        logger.info("Loading text and images... (progress bar disabled)")
     return ds_raw.map(
         map_load_text_and_images,
         with_indices=True,  # Only really used for error diagnostics
         batched=True,
-        batch_size=8,
+        batch_size=batch_size,
         remove_columns=ds_raw.column_names,  # Strip all raw/original fields - only take fn returns
         fn_kwargs={
             "images_path": images_path,
@@ -459,6 +491,7 @@ def prepare_base_dataset(
         },
         num_proc=num_workers,
         desc="Loading text and images",
+        cache_file_name=map_cache_file_name,
     )
 
 
@@ -467,23 +500,38 @@ def split_long_dataset_samples(
     tokenizer: PreTrainedTokenizerBase,
     max_seq_len: int,
     batched: bool = True,
-    batch_size: int = 8,
-    desc="Splitting long pages",
+    batch_size: int = 16,
+    desc: Optional[str] = "Splitting long pages",
     num_workers: Optional[int] = None,
     **other_map_kwargs,
 ) -> datasets.Dataset:
     """Transform a HF dataset by splitting samples longer than max_seq_len"""
     tokenizer_params = set(signature(tokenizer).parameters)
+
+    fn_kwargs = {
+        "tokenizer": tokenizer,
+        "max_seq_len": max_seq_len,
+        # Could consider exposing 'splitter' as an option here too but eh.
+        "tokenizer_params": tokenizer_params,
+    }
+    # Try and prevent first-use state changes from changing tokenizer's hash result for datasets:
+    # https://github.com/huggingface/transformers/issues/14931
+    # TODO: Can this be removed once fixed or because we have explicit cache file names now?
+    logger.info("Pre-warming tokenizer before split .map()")
+    map_split_long_samples(
+        dataset[0:1],
+        **fn_kwargs,
+    )
+    logger.info("Tokenizer pre-warm done")
+
+    if desc and not datasets.utils.is_progress_bar_enabled():
+        logger.info("%s... (progress bar disabled)", desc)
     return dataset.map(
         map_split_long_samples,
         batched=batched,
         batch_size=batch_size,
-        fn_kwargs={
-            "tokenizer": tokenizer,
-            "max_seq_len": max_seq_len,
-            # Could consider exposing 'splitter' as an option here too but eh.
-            "tokenizer_params": tokenizer_params,
-        },
+        remove_columns=dataset.column_names,
+        fn_kwargs=fn_kwargs,
         num_proc=num_workers,
         desc=desc,
         **other_map_kwargs,
@@ -492,8 +540,9 @@ def split_long_dataset_samples(
 
 def get_tokenizer_extra_kwargs(
     tokenizer: PreTrainedTokenizerBase,
-    max_seq_len: int,
+    max_seq_len: Optional[int] = None,
     pad_to_multiple_of: Optional[int] = 8,
+    are_batches_final: bool = False,
     overrides: Optional[Dict[str, Any]] = None,
     tokenizer_param_names: Optional[Union[Mapping[str, Any], Set[str]]] = None,
 ) -> Dict[str, Any]:
@@ -506,9 +555,14 @@ def get_tokenizer_extra_kwargs(
     tokenizer :
         Tokenizer to be configured
     max_seq_len :
-        Maximum number of tokens for the model
+        Optional maximum number of tokens for the model
     pad_to_multiple_of :
         Optional padding configuration for the tokenizer
+    are_batches_final :
+        When tokenizing a dataset in advance, the processing batches are not the final model
+        batches and therefore the only viable padding strategy (to ensure all model inputs in a
+        training batch match) is "max_length". When `are_batches_final` is not True,
+        `pad_to_multiple_of` will be ignored.
     overrides :
         Optional set of kwargs which will override these defaults
     tokenizer_param_names :
@@ -526,13 +580,20 @@ def get_tokenizer_extra_kwargs(
     tokenizer_kwargs = {k: v for k, v in overrides.items()} if overrides else {}
 
     # Common setup:
-    tokenizer_kwargs["max_length"] = max_seq_len
-    if pad_to_multiple_of is not None:
+    if max_seq_len is not None:
+        tokenizer_kwargs["max_length"] = max_seq_len
+    if not are_batches_final:
+        if pad_to_multiple_of is not None:
+            logger.warning(
+                "Ignoring pad_to_multiple_of=%s because are_batches_final is False. Padding must "
+                "be max_seq_len unless dealing with final training-ready batches.",
+                pad_to_multiple_of,
+            )
+        if max_seq_len is not None:
+            tokenizer_kwargs["padding"] = "max_length"
+    elif pad_to_multiple_of is not None:
         tokenizer_kwargs["padding"] = bool(pad_to_multiple_of)
         tokenizer_kwargs["pad_to_multiple_of"] = pad_to_multiple_of
-        # TODO: Truncation seems to silently break tokenization with v2 training?
-        # Without truncation, padding is ignored anyway
-        # tokenizer_kwargs["truncation"] = "max_length"
 
     # Automatic handling of different LayoutLM-based tokenizer versions:
     if ("is_split_into_words" in tokenizer_param_names) and (
@@ -551,92 +612,93 @@ def get_tokenizer_extra_kwargs(
     return tokenizer_kwargs
 
 
-def get_batch_tokenize_process_fn(
-    tokenizer: PreTrainedTokenizerBase,
-    max_seq_len: int,
-    processor: Optional[ProcessorMixin],
-    pad_to_multiple_of: Optional[int] = 8,
-    other_tokenizer_kwargs: Optional[Dict[str, Any]] = None,
-) -> Callable[[Dict[str, Any]], BatchEncoding]:
-    """Prepare a datasets.map function to tokenize/pre-process batches ready for model
+def map_tokenize_process(
+    batch: Dict[str, List],
+    tokenizer_processor: Union[PreTrainedTokenizerBase, ProcessorMixin],
+    param_names: Iterable[str],
+    **kwargs,
+) -> Dict[str, List]:
+    """datasets.map function for applying a tokenizer or processor to a dataset
 
-    This function analyzes the arguments supported by `tokenizer`/`processor`, to configure
-    final preprocessing consistently between LayoutLMv1 and v2/XLM. Arguments you pass through
-    `other_tokenizer_kwargs` will override these defaults.
-
-    Returns
-    -------
-    map_process :
-        A datasets.map()-ready function for pre-processing and tokenizing data batches.
+    Parameters
+    ----------
+    batch :
+        Data batch to operate on - this mapper assumes to operate in batched=True mode
+    tokenizer_processor :
+        Either a (Hugging Face `transformers`) Tokenizer or a Processor
+    param_names :
+        An iterable allow-listing fields from `batch` to pass as tokenizer/processor params
+    **kwargs :
+        Any other keyword args to pass through to the tokenizer/processor (as-is)
     """
-    tokenizer_param_names = signature(tokenizer).parameters
-    tokenizer_kwargs = get_tokenizer_extra_kwargs(
-        tokenizer=tokenizer,
-        max_seq_len=max_seq_len,
-        pad_to_multiple_of=pad_to_multiple_of,
-        overrides=other_tokenizer_kwargs,
-        tokenizer_param_names=tokenizer_param_names,
+    if "images" in batch and "images" in param_names and isinstance(batch["images"][0], list):
+        # Processor needs PIL Images or np/pt tensors, but not lists:
+        batch = {
+            k: v if k != "images" else [np.array(img) for img in batch["images"]]
+            for k, v in batch.items()
+        }
+    return tokenizer_processor(
+        **{k: batch[k] for k in batch if k in param_names},
+        **kwargs,
     )
 
-    if processor is None:
 
-        def map_process(batch: Dict[str, List]) -> BatchEncoding:
-            return tokenizer(
-                **{k: batch[k] for k in batch if k in tokenizer_param_names},
-                **tokenizer_kwargs,
-            )
-
-    else:
-        processor_param_names = signature(processor).parameters
-
-        def map_process(batch: Dict[str, List]) -> BatchEncoding:
-            if "images" in batch and isinstance(batch["images"][0], list):
-                # Processor needs PIL Images or np/pt tensors, but not lists:
-                batch["images"] = [np.array(img) for img in batch["images"]]
-            return processor(
-                **{k: batch[k] for k in batch if k in processor_param_names},
-                **tokenizer_kwargs,
-            )
-
-    return map_process
-
-
+# TODO: Remove if we can get rid of the up-front processing option?
 def tokenize_process_dataset(
     dataset: datasets.Dataset,
     tokenizer: PreTrainedTokenizerBase,
     max_seq_len: int,
     processor: Optional[ProcessorMixin],
-    pad_to_multiple_of: Optional[int] = 8,
     other_tokenizer_kwargs: Optional[Dict[str, Any]] = None,
     batched: bool = True,
-    batch_size: int = 8,
+    batch_size: int = 16,
     desc: Optional[str] = None,
     num_workers: Optional[int] = None,
     **other_map_kwargs,
 ) -> datasets.Dataset:
-    """Tokenize (or process) a dataset for use by the model
+    """Tokenize (or process) a dataset up-front, for use by the model
 
     For models with an associated `processor`, the processor will be used. Otherwise, the
     `tokenizer`. Since DataCollators typically do tokenization internally, you probably don't
     want to use this and a collator at the same time.
+
+    Note that by processing a dataset up-front in this way, you don't know that processing batches
+    correspond to model training mini-batches: so must *pad* sequences up to the full max_seq_len
+    instead of adapting to the biggest seq in each batch. This can be less efficient for tensor
+    core based GPUs where "pad_to_multiple_of" is helpful.
     """
     if desc is None:
         desc = "Processing dataset" if processor else "Tokenizing Dataset"
 
-    map_process = get_batch_tokenize_process_fn(
+    tokenizer_param_names = signature(tokenizer).parameters
+    tokenizer_kwargs = get_tokenizer_extra_kwargs(
         tokenizer=tokenizer,
         max_seq_len=max_seq_len,
-        processor=processor,
-        pad_to_multiple_of=pad_to_multiple_of,
-        other_tokenizer_kwargs=other_tokenizer_kwargs,
+        # Can't use multiple_of padding because preprocessing batches are not the final training
+        # batches:
+        pad_to_multiple_of=None,
+        are_batches_final=False,
+        overrides=other_tokenizer_kwargs,
+        tokenizer_param_names=tokenizer_param_names,
     )
+
+    tokenizer_processor = processor or tokenizer
+    param_names = tuple(signature(tokenizer_processor).parameters)
+
+    if desc and not datasets.utils.is_progress_bar_enabled():
+        logger.info("%s... (progress bar disabled)", desc)
     return dataset.map(
-        map_process,
+        map_tokenize_process,
         batched=batched,
         batch_size=batch_size,
         num_proc=num_workers,
         desc=desc,
         remove_columns=dataset.column_names,
+        fn_kwargs={
+            "tokenizer_processor": processor or tokenizer,
+            "param_names": param_names,
+            **tokenizer_kwargs,
+        },
         **other_map_kwargs,
     )
 
@@ -670,6 +732,7 @@ class LayoutLMDataCollatorMixin:
             self.tokenizer,
             max_seq_len=None,
             pad_to_multiple_of=self.pad_to_multiple_of,
+            are_batches_final=True,
             overrides={},
             tokenizer_param_names=self.tokenizer_param_names,
         )

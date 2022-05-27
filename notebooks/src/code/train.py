@@ -165,70 +165,72 @@ def train(
     data_args: config.DataTrainingArguments,
     training_args: config.SageMakerTrainingArguments,
 ):
-    logger.info("Creating config and model")
-    _, model, tokenizer, processor = get_model(model_args, data_args)
+    training_args._setup_devices  # Force distributed setup if applicable and not already done
+    logger.info("Started with local_rank %s", training_args.local_rank)
+    # Don't strictly need this around the model setup too, but keeps logs more understandable:
+    # Using the HF decorator rather than torch.distributed.barrier() to try and keep a bit more
+    # environment-agnostic:
+    with training_args.main_process_first(desc="Waiting for main process to load model and data"):
+        logger.info("Creating config and model")
+        _, model, tokenizer, processor = get_model(model_args, data_args)
 
-    if hasattr(model, "layoutlmv2") and training_args.n_gpu > 1:
-        training_args._setup_devices  # Force distributed setup if not already done
-        if dist.is_initialized():
-            logger.info("Synchronizing LayoutLMv2 visual batch norm for distributed training")
-            model.layoutlmv2.visual.synchronize_batch_norm()
-        else:
+        if hasattr(model, "layoutlmv2") and training_args.n_gpu > 1:
+            if dist.is_initialized():
+                logger.info("Synchronizing LayoutLMv2 visual batch norm for distributed training")
+                model.layoutlmv2.visual.synchronize_batch_norm()
+            else:
+                raise ValueError(
+                    "For multi-GPU training, LayoutLMv2/XLM must be run in Distributed Data "
+                    "Parallel mode (PyTorch native or SageMaker Distributed). Consider using SM "
+                    "DDP on a supported instance type (e.g. ml.p3.16xlarge), OR launching native "
+                    "via PyTorch DDP via ddp_launcher.py entrypoint"
+                )
+                # For more information, see:
+                # https://github.com/NielsRogge/Transformers-Tutorials/issues/30
+                # https://github.com/huggingface/transformers/issues/14110
+                # https://sagemaker.readthedocs.io/en/stable/api/training/smd_data_parallel_use_sm_pysdk.html
+                # For SM Distributed, ddp_launcher.py is not necessary - point straight to train.py
+
+        # Tokenizer check: this script requires a fast tokenizer.
+        if not isinstance(tokenizer, PreTrainedTokenizerFast):
             raise ValueError(
-                "For multi-GPU training, LayoutLMv2/XLM must be run in Distributed Data Parallel "
-                "mode (PyTorch native or SageMaker Distributed). Consider using SM DDP on a "
-                "supported instance type (e.g. ml.p3.16xlarge), or training with a single GPU."
+                "This example script only works for models that have a fast tokenizer. See the list "
+                "at https://huggingface.co/transformers/index.html#supported-frameworks for details."
             )
-            # For more information, see:
-            # https://github.com/NielsRogge/Transformers-Tutorials/issues/30
-            # https://github.com/huggingface/transformers/issues/14110
-            # https://sagemaker.readthedocs.io/en/stable/api/training/smd_data_parallel_use_sm_pysdk.html
-            # For other instance types where SageMaker Distributed Data Parallel is not available
-            # (e.g. p3.8xlarge, g4dn), it should be possible to launch this script in PyTorch DDP
-            # mode - but would require some extra configuration.
 
-    # Tokenizer check: this script requires a fast tokenizer.
-    if not isinstance(tokenizer, PreTrainedTokenizerFast):
-        raise ValueError(
-            "This example script only works for models that have a fast tokenizer. See the list "
-            "at https://huggingface.co/transformers/index.html#supported-frameworks for details."
+        # Detecting last checkpoint.
+        last_checkpoint = None
+        if os.path.isdir(training_args.output_dir) and training_args.do_train:
+            last_checkpoint = get_last_checkpoint(training_args.output_dir)
+            if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
+                logger.warning("No previous checkpoint found: training from scratch")
+            elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+                logger.info(
+                    f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this "
+                    "behavior, create the training job with an empty `checkpoint_s3_uri` or none."
+                )
+
+        # Was going to close the old main_process_first context and start a separate one here to
+        # maximize the time available for dataset prep until the default DDP 30min timeout kicks
+        # in... But doing so seems to cause datasets to deadlock/freeze after splitting pages for
+        # the training dataset. I think the same happens if using torch.distributed.barrier too?
+        logger.info("Loading datasets")
+        datasets = data.get_datasets(
+            data_args,
+            tokenizer,
+            processor,
+            n_workers=training_args.dataproc_num_workers,
+            cache_dir=model_args.cache_dir,
         )
 
-    # Detecting last checkpoint.
-    last_checkpoint = None
-    if os.path.isdir(training_args.output_dir) and training_args.do_train:
-        last_checkpoint = get_last_checkpoint(training_args.output_dir)
-        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
-            logger.warning("No previous checkpoint found: training from scratch")
-        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
-            logger.info(
-                f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this "
-                "behavior, create the training job with an empty `checkpoint_s3_uri` or none."
-            )
-
-    if training_args.local_rank not in [-1, 0]:
-        logger.info("Waiting for main process to prepare datasets")
-        dist.barrier()
-    logger.info("Loading datasets")
-    datasets = data.get_datasets(
-        data_args,
-        tokenizer,
-        processor,
-        n_workers=training_args.dataproc_num_workers,
-        cache_dir=model_args.cache_dir,
-    )
-
-    if datasets.train_dataset:
-        logger.info(f"train dataset has {len(datasets.train_dataset)} samples")
-    else:
-        logger.info("No training dataset provided")
-    if datasets.eval_dataset:
-        logger.info(f"validation dataset has {len(datasets.eval_dataset)} samples")
-    else:
-        logger.info("No validation dataset provided")
-
-    if training_args.local_rank == 0:
-        dist.barrier()
+        if datasets.train_dataset:
+            logger.info(f"train dataset has {len(datasets.train_dataset)} samples")
+        else:
+            logger.info("No training dataset provided")
+        if datasets.eval_dataset:
+            logger.info(f"validation dataset has {len(datasets.eval_dataset)} samples")
+        else:
+            logger.info("No validation dataset provided")
 
     logger.info("Setting up trainer")
     trainer = Trainer(

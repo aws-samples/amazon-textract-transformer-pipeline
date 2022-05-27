@@ -51,7 +51,7 @@ import torch
 import trp
 
 # Local Dependencies:
-from .data.base import get_batch_tokenize_process_fn
+from .data.base import get_tokenizer_extra_kwargs, map_tokenize_process
 from .data.geometry import layoutlm_boxes_from_trp_blocks
 from .data.ner import (
     TextractLayoutLMDataCollatorForWordClassification,
@@ -73,6 +73,16 @@ DEFAULT_THUMBNAIL_SIZE = os.environ.get("DEFAULT_THUMBNAIL_SIZE", "224,224")
 DEFAULT_THUMBNAIL_SIZE = tuple(int(x) for x in DEFAULT_THUMBNAIL_SIZE.split(","))
 DEFAULT_THUMBNAIL_COLOR = os.environ.get("DEFAULT_THUMBNAIL_COLOR", "128,128,128")
 DEFAULT_THUMBNAIL_COLOR = tuple(int(x) for x in DEFAULT_THUMBNAIL_COLOR.split(","))
+# Deprecated:
+FORCE_NER_PREPROCESS = os.environ.get("FORCE_NER_PREPROCESS", "0").lower()
+if FORCE_NER_PREPROCESS in ("t", "true", "y", "yes", "1"):
+    FORCE_NER_PREPROCESS = True
+elif FORCE_NER_PREPROCESS in ("f", "false", "n", "no", "0"):
+    FORCE_NER_PREPROCESS = False
+else:
+    raise ValueError(
+        f"Unexpected value '{FORCE_NER_PREPROCESS}' for boolean env var FORCE_NER_PREPROCESS"
+    )
 
 s3client = boto3.client("s3")
 
@@ -342,15 +352,15 @@ def model_fn(model_dir):
         else:
             raise ve
 
-    if processor:
-        tokenizer = processor.tokenizer
-        collator = None
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(model_dir)
-        collator = TextractLayoutLMDataCollatorForWordClassification(
+    tokenizer = processor.tokenizer if processor else AutoTokenizer.from_pretrained(model_dir)
+    collator = (
+        None
+        if (processor and FORCE_NER_PREPROCESS)
+        else TextractLayoutLMDataCollatorForWordClassification(
             tokenizer,
             pad_to_multiple_of=PAD_TO_MULTIPLE_OF,
         )
+    )
 
     model = AutoModelForTokenClassification.from_pretrained(model_dir)
     model.eval()
@@ -419,7 +429,9 @@ def predict_fn(input_data: dict, model: dict):
         words_by_page = [
             [word for line in page.lines for word in line.words] for page in trp_doc.pages
         ]
-        boxes_by_page = [layoutlm_boxes_from_trp_blocks(pgw) for pgw in words_by_page]
+        boxes_by_page = [
+            layoutlm_boxes_from_trp_blocks(pgw, return_tensors="np") for pgw in words_by_page
+        ]
         word_block_ids_by_page = [[word.id for word in pgw] for pgw in words_by_page]
         words_by_page = [[word.text for word in pgw] for pgw in words_by_page]
 
@@ -453,12 +465,20 @@ def predict_fn(input_data: dict, model: dict):
         if collator:
             collate_fn = lambda batch: collator(batch)
         else:
-            collate_fn = get_batch_tokenize_process_fn(
+            # TODO: Cut out this path if we can get rid of the up-front pre-processing option?
+            tokenizer_param_names = signature(tokenizer).parameters
+            tokenizer_kwargs = get_tokenizer_extra_kwargs(
                 tokenizer=tokenizer,
                 max_seq_len=max_seq_len,
                 pad_to_multiple_of=PAD_TO_MULTIPLE_OF,
-                processor=processor,
-                other_tokenizer_kwargs={"return_tensors": "pt"},
+                are_batches_final=True,
+                tokenizer_param_names=tokenizer_param_names,
+            )
+            collate_fn = lambda batch: map_tokenize_process(
+                batch,
+                tokenizer_processor=processor or tokenizer,
+                param_names=tuple(signature(processor or tokenizer).parameters),
+                **tokenizer_kwargs,
             )
 
         block_results_map = defaultdict(list)
