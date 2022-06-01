@@ -28,7 +28,6 @@ from .base import (
     prepare_base_dataset,
     split_long_dataset_samples,
     TaskData,
-    tokenize_process_dataset,
 )
 from .geometry import BoundingBoxAnnotationResult
 
@@ -427,11 +426,6 @@ def get_task(
     """Load datasets and data collators for NER model training"""
     logger.info("Getting NER datasets")
 
-    # Pre-processing up-front is a deprecated path that's only supported for processors (LLMv2+)
-    # and when explicitly enabled... but kept around until we can diagnose and fix why the custom
-    # collator path sometimes gets a few pct lower accuracy:
-    use_custom_collator = not (bool(processor) and data_args.force_ner_preprocess)
-
     train_dataset = prepare_dataset(
         data_args.textract,
         tokenizer=tokenizer,
@@ -447,18 +441,6 @@ def get_task(
         cache_dir=cache_dir,
         cache_file_prefix="nertrain",
     )
-    if not use_custom_collator:
-        train_dataset = tokenize_process_dataset(
-            dataset=train_dataset,
-            tokenizer=tokenizer,
-            max_seq_len=data_args.max_seq_length,
-            processor=processor,
-            num_workers=n_workers,
-            batch_size=data_args.dataproc_batch_size,
-            cache_file_name=(
-                os.path.join(cache_dir, "nertrain_4token.arrow") if (cache_dir) else None
-            ),
-        )
     logger.info("Train dataset ready: %s", train_dataset)
 
     if data_args.validation:
@@ -477,32 +459,16 @@ def get_task(
             cache_dir=cache_dir,
             cache_file_prefix="nerval",
         )
-        if not use_custom_collator:
-            eval_dataset = tokenize_process_dataset(
-                dataset=eval_dataset,
-                tokenizer=tokenizer,
-                max_seq_len=data_args.max_seq_length,
-                processor=processor,
-                num_workers=n_workers,
-                batch_size=data_args.dataproc_batch_size,
-                cache_file_name=(
-                    os.path.join(cache_dir, "nerval_4token.arrow") if (cache_dir) else None
-                ),
-            )
         logger.info("Validation dataset ready: %s", eval_dataset)
     else:
         eval_dataset = None
 
     return TaskData(
         train_dataset=train_dataset,
-        data_collator=(
-            TextractLayoutLMDataCollatorForWordClassification(
-                tokenizer=tokenizer,
-                pad_to_multiple_of=data_args.pad_to_multiple_of,
-                processor=processor,
-            )
-            if use_custom_collator
-            else None
+        data_collator=TextractLayoutLMDataCollatorForWordClassification(
+            tokenizer=tokenizer,
+            pad_to_multiple_of=data_args.pad_to_multiple_of,
+            processor=processor,
         ),
         eval_dataset=eval_dataset,
         metric_computer=get_metric_computer(data_args.num_labels),

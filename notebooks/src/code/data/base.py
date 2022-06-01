@@ -11,7 +11,7 @@ import json
 from numbers import Real
 import os
 import re
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, Union
 
 # External Dependencies:
 import datasets
@@ -610,97 +610,6 @@ def get_tokenizer_extra_kwargs(
         tokenizer_kwargs["return_token_type_ids"] = True
 
     return tokenizer_kwargs
-
-
-def map_tokenize_process(
-    batch: Dict[str, List],
-    tokenizer_processor: Union[PreTrainedTokenizerBase, ProcessorMixin],
-    param_names: Iterable[str],
-    **kwargs,
-) -> Dict[str, List]:
-    """datasets.map function for applying a tokenizer or processor to a dataset
-
-    Parameters
-    ----------
-    batch :
-        Data batch to operate on - this mapper assumes to operate in batched=True mode
-    tokenizer_processor :
-        Either a (Hugging Face `transformers`) Tokenizer or a Processor
-    param_names :
-        An iterable allow-listing fields from `batch` to pass as tokenizer/processor params
-    **kwargs :
-        Any other keyword args to pass through to the tokenizer/processor (as-is)
-    """
-    if "images" in batch and "images" in param_names and isinstance(batch["images"][0], list):
-        # Processor needs PIL Images or np/pt tensors, but not lists:
-        batch = {
-            k: v if k != "images" else [np.array(img) for img in batch["images"]]
-            for k, v in batch.items()
-        }
-    return tokenizer_processor(
-        **{k: batch[k] for k in batch if k in param_names},
-        **kwargs,
-    )
-
-
-# TODO: Remove if we can get rid of the up-front processing option?
-def tokenize_process_dataset(
-    dataset: datasets.Dataset,
-    tokenizer: PreTrainedTokenizerBase,
-    max_seq_len: int,
-    processor: Optional[ProcessorMixin],
-    other_tokenizer_kwargs: Optional[Dict[str, Any]] = None,
-    batched: bool = True,
-    batch_size: int = 16,
-    desc: Optional[str] = None,
-    num_workers: Optional[int] = None,
-    **other_map_kwargs,
-) -> datasets.Dataset:
-    """Tokenize (or process) a dataset up-front, for use by the model
-
-    For models with an associated `processor`, the processor will be used. Otherwise, the
-    `tokenizer`. Since DataCollators typically do tokenization internally, you probably don't
-    want to use this and a collator at the same time.
-
-    Note that by processing a dataset up-front in this way, you don't know that processing batches
-    correspond to model training mini-batches: so must *pad* sequences up to the full max_seq_len
-    instead of adapting to the biggest seq in each batch. This can be less efficient for tensor
-    core based GPUs where "pad_to_multiple_of" is helpful.
-    """
-    if desc is None:
-        desc = "Processing dataset" if processor else "Tokenizing Dataset"
-
-    tokenizer_param_names = signature(tokenizer).parameters
-    tokenizer_kwargs = get_tokenizer_extra_kwargs(
-        tokenizer=tokenizer,
-        max_seq_len=max_seq_len,
-        # Can't use multiple_of padding because preprocessing batches are not the final training
-        # batches:
-        pad_to_multiple_of=None,
-        are_batches_final=False,
-        overrides=other_tokenizer_kwargs,
-        tokenizer_param_names=tokenizer_param_names,
-    )
-
-    tokenizer_processor = processor or tokenizer
-    param_names = tuple(signature(tokenizer_processor).parameters)
-
-    if desc and not datasets.utils.is_progress_bar_enabled():
-        logger.info("%s... (progress bar disabled)", desc)
-    return dataset.map(
-        map_tokenize_process,
-        batched=batched,
-        batch_size=batch_size,
-        num_proc=num_workers,
-        desc=desc,
-        remove_columns=dataset.column_names,
-        fn_kwargs={
-            "tokenizer_processor": processor or tokenizer,
-            "param_names": param_names,
-            **tokenizer_kwargs,
-        },
-        **other_map_kwargs,
-    )
 
 
 @dataclass

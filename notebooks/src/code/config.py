@@ -347,15 +347,6 @@ class DataTrainingArguments:
     )
 
     # NER (token classification) specific parameters:
-    force_ner_preprocess: bool = field(
-        default=False,
-        metadata={
-            "help": "Set True to force up-front tokenization of NER datasets, instead of the "
-            "default per-minibatch tokenization. Typically slows down training, but has been "
-            "observed to boost accuracy for reasons undiagnosed. (DEPRECATED, hopefully we can "
-            "understand the accuracy issue and remove this."
-        },
-    )
     num_labels: Optional[int] = field(
         default=2,
         metadata={"help": "Number of entity classes (including 'other/none')"},
