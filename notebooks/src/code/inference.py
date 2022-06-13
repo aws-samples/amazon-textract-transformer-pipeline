@@ -345,6 +345,7 @@ def model_fn(model_dir):
     tokenizer = processor.tokenizer if processor else AutoTokenizer.from_pretrained(model_dir)
     collator = TextractLayoutLMDataCollatorForWordClassification(
         tokenizer,
+        processor=processor,
         pad_to_multiple_of=PAD_TO_MULTIPLE_OF,
     )
 
