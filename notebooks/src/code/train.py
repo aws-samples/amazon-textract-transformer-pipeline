@@ -331,7 +331,10 @@ def main():
 
     logger.info("Loaded arguments:\n%s\n%s\n%s", model_args, data_args, training_args)
     logger.info("Starting!")
-    set_seed(training_args.seed)
+    if training_args.seed:
+        set_seed(training_args.seed)
+    else:
+        logger.info("Random seed not set - results will be non-deterministic")
 
     # Start training:
     train(model_args, data_args, training_args)

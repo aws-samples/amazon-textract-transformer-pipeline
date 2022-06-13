@@ -14,6 +14,7 @@ try:
     from datasets import disable_progress_bar as disable_datasets_progress_bar
 except ImportError:  # Not available in datasets <v2.0.0
     disable_datasets_progress_bar = None
+from torch import use_deterministic_algorithms
 from transformers import HfArgumentParser, TrainingArguments
 from transformers.trainer_utils import IntervalStrategy
 
@@ -126,6 +127,11 @@ class SageMakerTrainingArguments(TrainingArguments):
         default="epoch",
         metadata={"help": "The evaluation strategy to use."},
     )
+    full_determinism: bool = field(
+        # (This will be a standard TrainingArg as of 4.19.0, but isn't in the current 4.17)
+        default=False,
+        metadata={"help": ("Will be automatically enabled for this script if `seed` is truthy.")},
+    )
     save_strategy: IntervalStrategy = field(
         # Should match evaluation strategy for early stopping to work
         default="epoch",
@@ -191,6 +197,19 @@ class SageMakerTrainingArguments(TrainingArguments):
         # ...And it doesn't see the TrainingArguments progress setting by default:
         if self.disable_tqdm and disable_datasets_progress_bar:
             disable_datasets_progress_bar()
+        # This script uses cuBLAS operators that require a workspace to run in deterministic /
+        # reproducible mode. You could alternatively set ":16:8" to save (about 24MiB of) GPU
+        # memory at the cost of performance. More information at:
+        # https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
+        if self.seed:
+            self.full_determinism = True
+            if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
+                print(
+                    "Defaulting CUBLAS_WORKSPACE_CONFIG=':4096:8' to enable deterministic ops as "
+                    "`seed` is set."
+                )
+                os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+            use_deterministic_algorithms(True)
         # Normalize early stopping configuration if it seems enabled:
         if self.early_stopping_patience is not None or self.early_stopping_threshold is not None:
             # The EarlyStoppingCallback requires load_best_model_at_end=True:
@@ -309,6 +328,10 @@ class DataTrainingArguments:
             "than this will be split."
         },
     )
+    pad_to_multiple_of: Optional[int] = field(
+        default=8,
+        metadata={"help": "Pad sequences to a multiple of this value, for tensor core efficiency"},
+    )
     # TODO: Check this is observed correctly
     max_train_samples: Optional[int] = field(
         default=None,
@@ -319,7 +342,10 @@ class DataTrainingArguments:
     )
     task_name: Optional[str] = field(
         default="ner",
-        metadata={"help": "The name of the task (ner, mlm...)."},
+        metadata={
+            "help": "The name of the task. This script currently supports 'ner' for entity "
+            "recognition or 'mlm' for pre-training (masked language modelling)."
+        },
     )
     textract: Optional[str] = field(
         default=os.environ.get("SM_CHANNEL_TEXTRACT"),
@@ -365,11 +391,6 @@ class DataTrainingArguments:
     # MLM (pre-training) specific parameters:
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Ratio of tokens to mask for masked language modeling loss"}
-    )
-
-    pad_to_multiple_of: Optional[int] = field(
-        default=8,
-        metadata={"help": "Pad sequences to a multiple of this value, for tensor core efficiency"},
     )
 
     def __post_init__(self):
