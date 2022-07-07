@@ -5,7 +5,7 @@
 Call get_datasets() from the training script to load datasets/collators for the current task.
 """
 # Python Built-Ins:
-from typing import Optional
+from typing import Iterable, Optional
 
 # External Dependencies:
 from transformers.processing_utils import ProcessorMixin
@@ -22,13 +22,19 @@ def get_datasets(
     data_args: DataTrainingArguments,
     tokenizer: PreTrainedTokenizerBase,
     processor: Optional[ProcessorMixin] = None,
+    model_param_names: Optional[Iterable[str]] = None,
     n_workers: Optional[int] = None,
     cache_dir: Optional[str] = None,
 ) -> TaskData:
     """Load datasets and data collators for model pre/training"""
     if data_args.task_name == "mlm":
         return get_mlm_task(
-            data_args, tokenizer, processor, n_workers=n_workers, cache_dir=cache_dir
+            data_args,
+            tokenizer,
+            processor,
+            model_param_names=model_param_names,
+            n_workers=n_workers,
+            cache_dir=cache_dir,
         )
     elif data_args.task_name == "ner":
         return get_ner_task(

@@ -194,6 +194,7 @@ def map_load_text_and_images(
     images_prefix: str = "",
     textract_path: str = "",
     textract_prefix: str = "",
+    output_line_ids: bool = False,
 ) -> Dict[str, List]:
     """datasets.map function to load examples for a manifest-file-like batch
 
@@ -221,6 +222,9 @@ def map_load_text_and_images(
         `dataloader_num_workers > 0`. This was true even if an Image `.copy()` was returned by this
         function, and even if `splitting.duplicate_batch_record` and `splitting.split_batch_record`
         were also updated to .copy() duplicated fields where possible.
+    - "line-ids": (If `output_line_ids` is True) List of 0-based indexes marking which Textract
+        `LINE` block on the page each word in "text" is associated with. This is used for some data
+        collation tasks that need to be aware of the grouping of words into contiguous lines.
     """
     if "textract-ref" not in batch:
         raise ValueError(f"Manifest batch at line {idxs[0]} missing required field 'textract-ref'")
@@ -264,6 +268,8 @@ def map_load_text_and_images(
     output = {k: [val for val in v] for k, v in batch.items()}
     output["text"] = [None] * input_n_records
     output["boxes"] = [None] * input_n_records
+    if output_line_ids:
+        output["line-ids"] = [None] * input_n_records
     if "page-num" not in batch:
         output["page-num"] = [None] * input_n_records
 
@@ -312,6 +318,10 @@ def map_load_text_and_images(
                 word_texts = [word.text for word in words]
                 output["boxes"][iout] = word_boxes
                 output["text"][iout] = word_texts
+                if output_line_ids:
+                    output["line-ids"] = [
+                        ixline for ixline, line in enumerate(page.lines) for _ in line.words
+                    ]
                 if image_refs_raw and output["images"][iout] is None:
                     if not auto_doc_images:
                         auto_doc_images = find_images_from_textract_path(
@@ -352,6 +362,14 @@ def map_load_text_and_images(
                     ]
                 else:
                     images_by_page = None
+                extras = {}
+                if images_by_page:
+                    extras["images"] = images_by_page
+                if output_line_ids:
+                    extras["line-ids"] = [
+                        [ixline for ixline, line in enumerate(page.lines) for _ in line.words]
+                        for page in doc.pages
+                    ]
                 output = duplicate_batch_record(
                     output,
                     ix=iout,
@@ -364,7 +382,7 @@ def map_load_text_and_images(
                         "text": [
                             [word.text for word in page_words] for page_words in words_by_page
                         ],
-                        **({"images": images_by_page} if images_by_page else {}),
+                        **extras,
                     },
                 )
                 input_to_output = input_to_output[0 : i + 1] + [
@@ -391,6 +409,7 @@ def prepare_base_dataset(
     images_path: Optional[str] = None,
     images_prefix: str = "",
     textract_prefix: str = "",
+    output_line_ids: bool = False,
     num_workers: Optional[int] = None,
     batch_size: int = 16,
     cache_dir: Optional[str] = None,
@@ -415,6 +434,9 @@ def prepare_base_dataset(
     textract_prefix :
         S3 prefix under which "textract-ref" URIs in the manifest file can be mapped to
         `textract_path`
+    output_line_ids :
+        Set True to augment dataset with the "line-ids" field listing 0-based contiguous line
+        number for each word in "text" (to enable grouping words back into lines).
     num_workers :
         Number of parallel worker threads to use for loading the dataset.
     cache_dir :
@@ -488,6 +510,7 @@ def prepare_base_dataset(
             "images_prefix": images_prefix,
             "textract_path": textract_path,
             "textract_prefix": textract_prefix,
+            "output_line_ids": output_line_ids,
         },
         num_proc=num_workers,
         desc="Loading text and images",
@@ -647,6 +670,30 @@ class LayoutLMDataCollatorMixin:
         )
         self.processor_param_names = (
             set(signature(self.processor).parameters) if self.processor else None
+        )
+
+    def _map_sample_line_ids(
+        self,
+        word_line_ids: List[int],
+        token_word_ids: List[Union[int, None]],
+    ) -> torch.LongTensor:
+        """Map one sequence's word-level line IDs to token-level.
+
+        Returns
+        -------
+        result :
+            (seq_len,) tensor of line ID numbers for each token in the sequence, or -1 where the
+            token does not correspond to real text (e.g. special CLS, SEP, PAD tokens, etc.)
+        """
+        n_words = len(word_line_ids)
+        augmented_example_line_ids = torch.LongTensor(word_line_ids + [-1])
+        # Torch tensors don't support None->NaN, but numpy float ndarrays do:
+        line_ids_np = np.nan_to_num(np.array(token_word_ids, dtype=float), nan=n_words)
+        return torch.index_select(
+            augmented_example_line_ids,
+            0,
+            # By this point all NaNs from special tokens should be resolved so can cast:
+            torch.LongTensor(line_ids_np.astype(int)),
         )
 
     def _map_word_boxes(

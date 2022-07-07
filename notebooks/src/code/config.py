@@ -392,6 +392,20 @@ class DataTrainingArguments:
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Ratio of tokens to mask for masked language modeling loss"}
     )
+    tiam_probability: float = field(
+        default=0.15,
+        metadata={
+            "help": "Ratio of text lines to mask in the image for LayoutLMv2/XLM 'Text-Image "
+            "Alignment' pre-training loss. Set 0 to disable TIA in pre-training. Ignored for LLMv1."
+        },
+    )
+    tim_probability: float = field(
+        default=0.2,
+        metadata={
+            "help": "Ratio of page images to randomly permute for LayoutLMv2/XLM 'Text-Image "
+            "Matching' pre-training loss. Set 0 to disable TIM in pre-training. Ignored for LLMv1.",
+        },
+    )
 
     def __post_init__(self):
         if not self.textract:

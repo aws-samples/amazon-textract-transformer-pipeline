@@ -3,6 +3,7 @@
 """Train HuggingFace LayoutLM on Amazon Textract results
 """
 # Python Built-Ins:
+from inspect import signature
 import os
 import shutil
 
@@ -29,7 +30,7 @@ from . import config
 from . import data
 from . import logging_utils
 from .smddpfix import Trainer
-from .models.layoutlmv2 import LayoutLMv2ForMaskedLM
+from .models.layoutlmv2 import LayoutLMv2ForPretraining
 
 logger = logging_utils.getLogger("main")
 
@@ -133,10 +134,10 @@ def get_model(model_args: config.ModelArguments, data_args: config.DataTrainingA
         if isinstance(config, LayoutLMv2Config):
             logger.info(
                 "As of v4.18, HF transformers does not bundle a variant of LayoutLMv2/XLM for "
-                "pre-training. Using a basic custom implementation inspired by v1, which is "
-                "simpler than the full LLMv2/XLM pre-training objective."
+                "pre-training. Using a custom implementation which may not exactly align to the "
+                "published research."
             )
-            model = LayoutLMv2ForMaskedLM.from_pretrained(
+            model = LayoutLMv2ForPretraining.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
@@ -219,6 +220,7 @@ def train(
             data_args,
             tokenizer,
             processor,
+            model_param_names=set(signature(model).parameters),
             n_workers=training_args.dataproc_num_workers,
             cache_dir=model_args.cache_dir,
         )
