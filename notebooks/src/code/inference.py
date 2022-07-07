@@ -242,7 +242,7 @@ def input_fn(input_bytes, content_type: str):
                 if "images" in thumbnails:
                     thumbnails = thumbnails["images"]
                 elif "image" in thumbnails:
-                    thumbnails = thumbnails["image"]
+                    thumbnails = np.expand_dims(thumbnails["image"], axis=0)
                 else:
                     raise ValueError(
                         "Page thumbnails archive for request did not contain either 'images' or "
@@ -256,7 +256,7 @@ def input_fn(input_bytes, content_type: str):
                             with io.BytesIO(b) as imgio:
                                 thmbs.append(PIL.Image.open(imgio).copy())
                         thumbnails = thmbs
-                    elif len(thumbnails.shape) != 4:
+                    elif thumbnails.ndim != 4:
                         logger.warning(
                             "Thumbnails expected either array of PNG bytestrings or 4D images array. "
                             f"Got shape {thumbnails.shape}"
@@ -266,7 +266,7 @@ def input_fn(input_bytes, content_type: str):
                         # Again closing the BytesIOs without breaking PIL.Image:
                         with io.BytesIO(thumbnails[page_num - 1]) as imgio:
                             thumbnails = [PIL.Image.open(imgio).copy()]
-                    elif len(thumbnails.shape) != 4:
+                    elif thumbnails.ndim != 4:
                         logger.warning(
                             "Thumbnails expected either array of PNG bytestrings or 4D images array. "
                             f"Got shape {thumbnails.shape}"
@@ -425,7 +425,7 @@ def predict_fn(input_data: dict, model: dict):
         tokenizer_params = set(signature(tokenizer).parameters)
         collate_fn = lambda batch: collator(batch)
 
-        if processor and not images:
+        if processor and (images is None):
             warns.append(
                 f"SageMaker model's preprocessor ({type(processor)}) expects page images (as "
                 ".S3Thumbnails.{Bucket, Key} numpy array pointer in the request) but none were "
@@ -442,7 +442,7 @@ def predict_fn(input_data: dict, model: dict):
                     "text": words_by_page,
                     "block-ids": word_block_ids_by_page,
                     "boxes": boxes_by_page,
-                    **({"images": images} if images and processor else {}),
+                    **({"images": images} if processor and (images is not None) else {}),
                 },
                 tokenizer=tokenizer,
                 max_seq_len=max_seq_len - 2,  # (Leave room for CLS and SEP)

@@ -519,6 +519,7 @@ import numpy as np
 # MIME type constants:
 SINGLE_IMAGE_CONTENT_TYPES = {
     "image/jpeg": "JPG",
+    "image/jpg": "JPG",
     "image/png": "PNG",
 }
 MULTI_IMAGE_CONTENT_TYPES = {
