@@ -36,8 +36,36 @@ class PipelineDemoStack(Stack):
     """
 
     def __init__(
-        self, scope: Construct, construct_id: str, default_project_id: str, **kwargs
+        self,
+        scope: Construct,
+        construct_id: str,
+        default_project_id: str,
+        use_thumbnails: bool,
+        **kwargs,
     ) -> None:
+        """Create a PipelineDemoStack
+
+        Parameters
+        ----------
+        scope :
+            As per aws_cdk.Stack
+        construct_id :
+            As per aws_cdk.Stack
+        default_project_id :
+            The `ProjectId` is a CFn stack parameter that prefixes created SSM parameters and
+            allows SageMaker notebooks to look up the parameters for the deployed stack. If you're
+            deploying straight from `cdk deploy`, then the value you specify here will be used. If
+            you're `cdk synth`ing a CloudFormation template, then this will be the default value
+            for the ProjectId parameter.
+        use_thumbnails :
+            Set `True` to build the stack with support for visual (page thumbnail image) model
+            input features, or `False` to omit the thumbnailing step. Pipelines deployed with
+            `use_thumbnails=True` will fail if a thumbnailer endpoint is not set up (see SageMaker
+            notebooks). Pipelines deployed with `use_thumbnails=False` cannot fully utilize model
+            architectures that use page images for inference (such as LayoutLMv2+, etc).
+        **kwargs :
+            As per aws_cdk.Stack
+        """
         super().__init__(scope, construct_id, **kwargs)
 
         # Could consider just directly using the stack ID for this, but then if you were to vend
@@ -91,6 +119,7 @@ class PipelineDemoStack(Stack):
             "ProcessingPipeline",
             input_bucket=self.input_bucket,
             ssm_param_prefix=f"/{self.project_id_param.value_as_string}/config/",
+            use_thumbnails=use_thumbnails,
         )
         self.data_science_policy = ManagedPolicy(
             self,
@@ -164,7 +193,9 @@ class PipelineDemoStack(Stack):
             description=(
                 "SSM parameter to configure the pipeline's Thumbnail generation endpoint name"
             ),
-            value=self.pipeline.thumbnail_endpoint_param.parameter_name,
+            value="undefined"
+            if self.pipeline.thumbnail_endpoint_param is None
+            else self.pipeline.thumbnail_endpoint_param.parameter_name,
         )
         self.thumbnail_param_output.override_logical_id("ThumbnailEndpointParamName")
         self.entity_config_param_output = CfnOutput(
@@ -254,9 +285,7 @@ class PipelineDemoStack(Stack):
             description=(
                 "Name of the S3 bucket to which SageMaker (async) model results should be stored"
             ),
-            parameter_name=(
-                f"/{self.project_id_param.value_as_string}/static/ModelResultsBucket"
-            ),
+            parameter_name=(f"/{self.project_id_param.value_as_string}/static/ModelResultsBucket"),
             simple_name=False,
             string_value=self.pipeline.enriched_results_bucket.bucket_name,
         )

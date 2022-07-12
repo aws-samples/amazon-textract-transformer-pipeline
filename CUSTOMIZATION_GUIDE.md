@@ -82,6 +82,13 @@ If your dataset is particularly tiny (more like e.g. 30 labelled pages than 100)
 
 ## Customizing the pipeline
 
+### Skipping page image generation (optimizing for LayoutLMv1)
+
+By default, the deployed pipeline will invoke a page thumbnail image generation endpoint in parallel to running input documents through Amazon Textract. These are useful additional inputs for some model architectures supported by the pipeline (e.g. LayoutLMv2, LayoutXLM), but are not required or used by LayoutLMv1.
+
+If you know you'll be using the pipeline with LayoutLMv1 models only, you can edit [cdk_app.py](cdk_app.py) to set `use_thumbnails=False` before deploying to remove the parallel thumbnailing step from the pipeline. When the pipeline is deployed with the default `use_thumbnails=True`, it will fail unless a thumbnailing endpoint is properly configured (via SSM as shown in [notebook 2](notebooks/2.%20Model%20Training.ipynb)).
+
+
 ### Handling large documents (or optimizing for small ones)
 
 Because some components of the pipeline have configured timeouts or process consolidated document Textract JSON in memory, scaling to very large documents (e.g. hundreds of pages) may require some configuration changes in the CDK solution.
@@ -132,7 +139,7 @@ Because much more un-labelled domain data (Textracted documents) is usually avai
 
 For this reason, it's typically best to **first experiment with fine-tuning the public base models** - before exploring what improvements might be achievable with domain-specific pre-training. It's also useful to understand the relative value of the effort of collecting more labelled data (see *How much data do I need?*) to compare against dedicating resources to pre-training.
 
-Unless your domain diverges strongly from the data the public model was trained on (for example trying to transfer to a new language or an area heavy with unusual grammar/jargon), accuracy improvements from continuation pre-training are likely to be small and incremental rather than revolutionary. To consider from-scratch pre-training (without a public model base), you'll typically need a particularly large and diverse corpus (as per training BERT from scratch) to get good results.
+Unless your domain diverges strongly from the data the public model was trained on (for example trying to transfer to a new language or an area heavy with unusual grammar/jargon), accuracy improvements from continuation pre-training are likely to be small and incremental rather than revolutionary. To consider from-scratch pre-training (without a public model base), you'll typically need a large and diverse corpus (as per training BERT from scratch) to get good results.
 
 > ⚠️ **Note:** Some extra code modifications may be required to pre-train from scratch (for example to initialize a new tokenizer from the source data).
 

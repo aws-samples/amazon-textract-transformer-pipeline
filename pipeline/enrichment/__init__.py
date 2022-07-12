@@ -3,7 +3,7 @@
 """CDK for NLP/ML model enrichment stage of the OCR pipeline
 """
 # Python Built-Ins:
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 # External Dependencies:
 from aws_cdk import Duration, Token
@@ -20,10 +20,12 @@ from ..shared.sagemaker import SageMakerCallerFunction, SageMakerSSMStep
 class SageMakerEnrichmentStep(Construct):
     """CDK construct for an OCR pipeline step to enrich Textract JSON on S3 using SageMaker
 
-    This construct's `.sfn_task` expects inputs with an $.OCRPreProc array of 2 elements: The first
-    specifying a consolidated Textract JSON and the second a consolidated page thumbnails file.
-    Both objects should have { Bucket, Key } structure. The task will set $.Textract on the output,
-    with a similar { Bucket, Key } structure pointing to the enriched output JSON file.
+    This construct's `.sfn_task` takes input from JSONPath locations as specified by init params
+    `textracted_input_jsonpath` (mandatory) and `thumbnail_input_jsonpath` (optional). The first
+    links to a consolidated Textract JSON result in S3 as {Bucket, Key}. The second (if present),
+    links to a consolidated page thumbnails file for the document: Again as S3 {Bucket, Key}. The
+    task will set $.Textract on the output, with a similar { Bucket, Key } structure pointing to
+    the enriched output JSON file.
 
     This step is implemented via AWS Lambda (rather than direct Step Function service call) to
     support looking up the configured SageMaker endpoint name from SSM within the same SFn step.
@@ -40,10 +42,37 @@ class SageMakerEnrichmentStep(Construct):
         lambda_role: Role,
         output_bucket: Bucket,
         ssm_param_prefix: Union[Token, str],
+        textracted_input_jsonpath: Dict[str, str],
+        thumbnail_input_jsonpath: Optional[Dict[str, str]] = None,
         support_async_endpoints: bool = True,
         shared_sagemaker_caller_lambda: Optional[SageMakerCallerFunction] = None,
         **kwargs,
     ):
+        """Create a SageMakerEnrichmentStep
+
+        Parameters
+        ----------
+        lambda_role :
+            IAM Execution Role for AWS Lambda, which will be used for the function to invoke the
+            SageMaker endpoint.
+        output_bucket :
+            S3 Bucket where inference results should be stored.
+        ssm_param_prefix :
+            Name prefix under which the SSM SageMakerEndpointName parameter will be generated.
+        textracted_input_jsonpath :
+            Dict of `{ Bucket, Key }` locating the input document Textract result (should typically
+            each be an `aws_stepfunctions.JsonPath` pointing to strings in the SFn state).
+        thumbnail_input_jsonpath :
+            Optional Dict of `{ Bucket, Key }` locating the thumbnail images archive for the input
+            document (if thumbnailing is enabled). Structure as `textracted_input_jsonpath`.
+        support_async_endpoints :
+            As per `..shared.sagemaker.SageMakerSSMStep`
+        shared_sagemaker_caller_lambda :
+            Optional SageMakerCallerFunction Lambda for calling the SageMaker endpoint, if an
+            already-created one is to be used (for sharing with other constructs).
+        **kwargs :
+            As per Construct parent
+        """
         super().__init__(scope, id, **kwargs)
 
         self.endpoint_param = ssm.StringParameter(
@@ -66,6 +95,34 @@ class SageMakerEnrichmentStep(Construct):
 
         output_bucket.grant_read_write(lambda_role, "enriched/*")
 
+        # Prepare the "Body" param for the Lambda function:
+        inf_req_body = {
+            "S3Input": textracted_input_jsonpath,
+            "S3Output": {
+                "Bucket": output_bucket.bucket_name,
+                "Key": sfn.JsonPath.format(
+                    "enriched/{}",
+                    textracted_input_jsonpath["Key"],
+                ),
+            },
+        }
+        if thumbnail_input_jsonpath is None:
+            # No need to upload this payload to S3: Lambda can directly invoke SageMaker on S3Input
+            # if async, or pass the object if sync.
+            body_upload = None
+        else:
+            inf_req_body["S3Thumbnails"] = thumbnail_input_jsonpath
+            # Since our Body.S3Input doesn't contain the *entire* endpoint input (as the raw
+            # Textract JSON is missing the S3Thumbnails link), to call an async SM endpoint Lambda
+            # will need to upload the above `inf_req_body` JSON to S3 first:
+            body_upload = {
+                "Bucket": output_bucket.bucket_name,
+                "Key": sfn.JsonPath.format(
+                    "requests/{}",
+                    textracted_input_jsonpath["Key"],
+                ),
+            }
+
         self.sfn_task = SageMakerSSMStep(
             self,
             "NLPEnrichmentModel",
@@ -77,33 +134,8 @@ class SageMakerEnrichmentStep(Construct):
                 {
                     # Because the caller lambda can be shared, we need to specify the param on req:
                     "EndpointNameParam": self.endpoint_param.parameter_name,
-                    "Body": {
-                        "S3Input": {
-                            "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[0].Bucket"),
-                            "Key": sfn.JsonPath.string_at("$.OCRPreproc[0].Key"),
-                        },
-                        "S3Thumbnails": {
-                            "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[1].Bucket"),
-                            "Key": sfn.JsonPath.string_at("$.OCRPreproc[1].Key"),
-                        },
-                        "S3Output": {
-                            "Bucket": output_bucket.bucket_name,
-                            "Key": sfn.JsonPath.format(
-                                "enriched/{}",
-                                sfn.JsonPath.string_at("$.OCRPreproc[0].Key"),
-                            ),
-                        },
-                    },
-                    # Since our Body.S3Input doesn't contain the *entire* endpoint input (as the
-                    # raw Textract JSON is missing the S3Thumbnails link), to call an async SM
-                    # endpoint we'll need to upload the above Body JSON to S3:
-                    "BodyUpload": {
-                        "Bucket": output_bucket.bucket_name,
-                        "Key": sfn.JsonPath.format(
-                            "requests/{}",
-                            sfn.JsonPath.string_at("$.OCRPreproc[0].Key"),
-                        ),
-                    },
+                    "Body": inf_req_body,
+                    **({"BodyUpload": body_upload} if body_upload else {}),
                     "ContentType": "application/json",
                     **({"TaskToken": sfn.JsonPath.task_token} if support_async_endpoints else {}),
                 }

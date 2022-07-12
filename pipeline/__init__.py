@@ -53,6 +53,7 @@ class ProcessingPipeline(Construct):
         id: str,
         input_bucket: s3.Bucket,
         ssm_param_prefix: Union[Token, str],
+        use_thumbnails: bool = True,
         **kwargs,
     ):
         """Create a ProcessingPipeline
@@ -69,6 +70,13 @@ class ProcessingPipeline(Construct):
         ssm_param_prefix : Union[aws_cdk.Token, str]
             A prefix to apply to generated AWS SSM Parameter Store configuration parameter names,
             to help keep the account tidy. Should begin and end with a forward slash.
+        use_thumbnails : bool
+            When `True`, the pipeline is configured to call a page thumbnail image generation
+            endpoint and pass these resized images through to the SageMaker document understanding
+            / enrichment model. Set `False` to skip deploying these features. Pipelines deployed
+            with `use_thumbnails=True` will fail if a thumbnailer endpoint is not set up (see
+            SageMaker notebooks). Pipelines deployed with `use_thumbnails=False` cannot fully
+            utilize model architectures that use page images for inference (such as LayoutLMv2+).
         **kwargs : Any
             Passed through to parent Construct
         """
@@ -160,13 +168,30 @@ class ProcessingPipeline(Construct):
             output_bucket=self.textract_results_bucket,
             output_prefix="textract",
         )
-        self.thumbnails_step = GenerateThumbnailsStep(
+        if use_thumbnails:
+            self.thumbnails_step = GenerateThumbnailsStep(
+                self,
+                "ThumbnailStep",
+                lambda_role=self.shared_lambda_role,
+                ssm_param_prefix=ssm_param_prefix,
+                shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
+            )
+            ocr_preproc_states = [self.ocr_step.sfn_task, self.thumbnails_step.sfn_task]
+        else:
+            self.thumbnails_step = None
+            ocr_preproc_states = [self.ocr_step.sfn_task]
+
+        # You could optimize out this Parallel if you're always going to run only the Textract
+        # step at this point, but it helps for an agnostic solution because it can be tricky to
+        # simultaneously select a subset of the state output and map it to a subkey of the state
+        # inside TextractOcrStep.
+        ocr_preproc = sfn.Parallel(
             self,
-            "ThumbnailStep",
-            lambda_role=self.shared_lambda_role,
-            ssm_param_prefix=ssm_param_prefix,
-            shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
-        )
+            "OCRAndPreProcessing",
+            comment="Run OCR and (if set up) generate resized page thumbnail images in parallel",
+            result_path="$.OCRPreproc",
+        ).branch(*ocr_preproc_states)
+
         self.enrichment_step = SageMakerEnrichmentStep(
             self,
             "EnrichmentStep",
@@ -174,6 +199,16 @@ class ProcessingPipeline(Construct):
             output_bucket=self.enriched_results_bucket,
             ssm_param_prefix=ssm_param_prefix,
             shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
+            textracted_input_jsonpath={
+                "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[0].Bucket"),
+                "Key": sfn.JsonPath.string_at("$.OCRPreproc[0].Key"),
+            },
+            thumbnail_input_jsonpath={
+                "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[1].Bucket"),
+                "Key": sfn.JsonPath.string_at("$.OCRPreproc[1].Key"),
+            }
+            if use_thumbnails
+            else None,
         )
         self.postprocessing_step = LambdaPostprocStep(
             self,
@@ -188,16 +223,6 @@ class ProcessingPipeline(Construct):
             input_bucket=self.input_bucket,
             reviews_bucket=self.human_reviews_bucket,
             ssm_param_prefix=ssm_param_prefix,
-        )
-
-        ocr_preproc = sfn.Parallel(
-            self,
-            "OCRAndPreProcessing",
-            comment="Run OCR and generate resized page thumbnail images in parallel",
-            result_path="$.OCRPreproc",
-        ).branch(
-            self.ocr_step.sfn_task,
-            self.thumbnails_step.sfn_task,
         )
 
         success = sfn.Succeed(
@@ -288,9 +313,12 @@ class ProcessingPipeline(Construct):
         return self.enrichment_step.endpoint_param
 
     @property
-    def thumbnail_endpoint_param(self) -> ssm.StringParameter:
-        """SSM parameter linking the pipeline to a thumbnail generator endpoint (on SageMaker)"""
-        return self.thumbnails_step.endpoint_param
+    def thumbnail_endpoint_param(self) -> Optional[ssm.StringParameter]:
+        """SSM parameter linking the pipeline to a thumbnail generator endpoint (on SageMaker)
+
+        This will be `None` if the construct was created with `use_thumbnails=False`
+        """
+        return None if self.thumbnails_step is None else self.thumbnails_step.endpoint_param
 
     @property
     def sagemaker_sns_topic(self) -> Optional[sns.Topic]:
@@ -300,7 +328,11 @@ class ProcessingPipeline(Construct):
     @property
     def thumbnail_sns_topic(self) -> Optional[sns.Topic]:
         """SNS topic that async SageMaker endpoints should use for callback, or None if not enabled"""
-        return self.thumbnails_step.sfn_task.async_notify_topic
+        return (
+            None
+            if self.thumbnails_step is None
+            else self.thumbnails_step.sfn_task.async_notify_topic
+        )
 
     @property
     def entity_config_param(self) -> ssm.StringParameter:
@@ -329,10 +361,14 @@ class ProcessingPipeline(Construct):
         return [
             SsmParameterReadStatement(
                 resources=[
-                    self.sagemaker_endpoint_param,
-                    self.thumbnail_endpoint_param,
-                    self.entity_config_param,
-                    self.review_workflow_param,
+                    param
+                    for param in (
+                        self.sagemaker_endpoint_param,
+                        self.thumbnail_endpoint_param,
+                        self.entity_config_param,
+                        self.review_workflow_param,
+                    )
+                    if param is not None
                 ],
                 sid=None if sid_prefix is None else (sid_prefix + "ReadPipelineConfigParams"),
             )
@@ -350,10 +386,14 @@ class ProcessingPipeline(Construct):
         return [
             SsmParameterWriteStatement(
                 resources=[
-                    self.sagemaker_endpoint_param,
-                    self.thumbnail_endpoint_param,
-                    self.entity_config_param,
-                    self.review_workflow_param,
+                    param
+                    for param in (
+                        self.sagemaker_endpoint_param,
+                        self.thumbnail_endpoint_param,
+                        self.entity_config_param,
+                        self.review_workflow_param,
+                    )
+                    if param is not None
                 ],
                 sid=None if sid_prefix is None else (sid_prefix + "WritePipelineConfigParams"),
             ),
@@ -388,7 +428,7 @@ class ProcessingPipeline(Construct):
             Prefix to add to generated statement IDs for uniqueness, or "", or None to suppress
             SIDs.
         """
-        return [
+        statements = [
             S3Statement(
                 grant_write=False,
                 resources=[self.textract_results_bucket],
@@ -402,7 +442,9 @@ class ProcessingPipeline(Construct):
             *self.enrichment_step.sagemaker_sns_statements(
                 sid_prefix=None if sid_prefix is None else (sid_prefix + "Enrich"),
             ),
-            *self.thumbnails_step.sagemaker_sns_statements(
-                sid_prefix=None if sid_prefix is None else (sid_prefix + "Thumbs"),
-            ),
         ]
+        if self.thumbnails_step is not None:
+            statements += self.thumbnails_step.sagemaker_sns_statements(
+                sid_prefix=None if sid_prefix is None else (sid_prefix + "Thumbs"),
+            )
+        return statements
