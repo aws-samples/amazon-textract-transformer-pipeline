@@ -3,31 +3,28 @@
 """CDK for NLP/ML model enrichment stage of the OCR pipeline
 """
 # Python Built-Ins:
-import os
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 # External Dependencies:
 from aws_cdk import Duration, Token
 from aws_cdk.aws_iam import Effect, PolicyStatement, Role
-from aws_cdk.aws_lambda import Runtime as LambdaRuntime
-from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from aws_cdk.aws_s3 import Bucket
-import aws_cdk.aws_sns as sns
-import aws_cdk.aws_sns_subscriptions as subs
 import aws_cdk.aws_ssm as ssm
 import aws_cdk.aws_stepfunctions as sfn
-import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
 from constructs import Construct
 
-
-SM_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-call-sagemaker")
+# Local Dependencies:
+from ..shared.sagemaker import SageMakerCallerFunction, SageMakerSSMStep
 
 
 class SageMakerEnrichmentStep(Construct):
     """CDK construct for an OCR pipeline step to enrich Textract JSON on S3 using SageMaker
 
-    This construct's `.sfn_task` expects inputs with $.Textract.Bucket and $.Textract.Key
-    properties, and will override that $.Textract field on the output with the bucket and key for
+    This construct's `.sfn_task` takes input from JSONPath locations as specified by init params
+    `textracted_input_jsonpath` (mandatory) and `thumbnail_input_jsonpath` (optional). The first
+    links to a consolidated Textract JSON result in S3 as {Bucket, Key}. The second (if present),
+    links to a consolidated page thumbnails file for the document: Again as S3 {Bucket, Key}. The
+    task will set $.Textract on the output, with a similar { Bucket, Key } structure pointing to
     the enriched output JSON file.
 
     This step is implemented via AWS Lambda (rather than direct Step Function service call) to
@@ -38,8 +35,6 @@ class SageMakerEnrichmentStep(Construct):
     invocations, the same Lambda processes SageMaker callback events via SNS to notify SFn.
     """
 
-    async_notify_topic: Optional[sns.Topic]
-
     def __init__(
         self,
         scope: Construct,
@@ -47,34 +42,40 @@ class SageMakerEnrichmentStep(Construct):
         lambda_role: Role,
         output_bucket: Bucket,
         ssm_param_prefix: Union[Token, str],
+        textracted_input_jsonpath: Dict[str, str],
+        thumbnail_input_jsonpath: Optional[Dict[str, str]] = None,
         support_async_endpoints: bool = True,
+        shared_sagemaker_caller_lambda: Optional[SageMakerCallerFunction] = None,
         **kwargs,
     ):
-        super().__init__(scope, id, **kwargs)
-        lambda_role.add_to_policy(
-            PolicyStatement(
-                sid="SageMakerEndpointsDescribeInvoke",
-                actions=["sagemaker:InvokeEndpoint"]
-                + (
-                    ["sagemaker:DescribeEndpoint", "sagemaker:InvokeEndpointAsync"]
-                    if support_async_endpoints
-                    else []
-                ),
-                effect=Effect.ALLOW,
-                resources=["*"],
-            )
-        )
-        if support_async_endpoints:
-            lambda_role.add_to_policy(
-                PolicyStatement(
-                    sid="StateMachineNotify",
-                    actions=["states:SendTask*"],
-                    effect=Effect.ALLOW,
-                    resources=["*"],  # No resource types currently supported per the doc
-                )
-            )
+        """Create a SageMakerEnrichmentStep
 
-        self.model_param = ssm.StringParameter(
+        Parameters
+        ----------
+        lambda_role :
+            IAM Execution Role for AWS Lambda, which will be used for the function to invoke the
+            SageMaker endpoint.
+        output_bucket :
+            S3 Bucket where inference results should be stored.
+        ssm_param_prefix :
+            Name prefix under which the SSM SageMakerEndpointName parameter will be generated.
+        textracted_input_jsonpath :
+            Dict of `{ Bucket, Key }` locating the input document Textract result (should typically
+            each be an `aws_stepfunctions.JsonPath` pointing to strings in the SFn state).
+        thumbnail_input_jsonpath :
+            Optional Dict of `{ Bucket, Key }` locating the thumbnail images archive for the input
+            document (if thumbnailing is enabled). Structure as `textracted_input_jsonpath`.
+        support_async_endpoints :
+            As per `..shared.sagemaker.SageMakerSSMStep`
+        shared_sagemaker_caller_lambda :
+            Optional SageMakerCallerFunction Lambda for calling the SageMaker endpoint, if an
+            already-created one is to be used (for sharing with other constructs).
+        **kwargs :
+            As per Construct parent
+        """
+        super().__init__(scope, id, **kwargs)
+
+        self.endpoint_param = ssm.StringParameter(
             self,
             "EnrichmentSageMakerEndpointParam",
             description="Name of the SageMaker Endpoint to call for OCR result enrichment",
@@ -85,65 +86,63 @@ class SageMakerEnrichmentStep(Construct):
         )
         lambda_role.add_to_policy(
             PolicyStatement(
-                sid="ReadSSMModelParam",
+                sid="ReadSageMakerEndpointParam",
                 actions=["ssm:GetParameter"],
                 effect=Effect.ALLOW,
-                resources=[self.model_param.parameter_arn],
+                resources=[self.endpoint_param.parameter_arn],
             )
         )
 
-        self.caller_lambda = PythonFunction(
-            self,
-            "CallSageMakerModel",
-            entry=SM_LAMBDA_PATH,
-            index="main.py",
-            handler="handler",
-            memory_size=128,
-            environment={
-                "DEFAULT_ENDPOINT_NAME_PARAM": self.model_param.parameter_name,
-                "SUPPORT_ASYNC_ENDPOINTS": "1" if support_async_endpoints else "0",
+        output_bucket.grant_read_write(lambda_role, "enriched/*")
+
+        # Prepare the "Body" param for the Lambda function:
+        inf_req_body = {
+            "S3Input": textracted_input_jsonpath,
+            "S3Output": {
+                "Bucket": output_bucket.bucket_name,
+                "Key": sfn.JsonPath.format(
+                    "enriched/{}",
+                    textracted_input_jsonpath["Key"],
+                ),
             },
-            role=lambda_role,
-            runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=Duration.seconds(60),
-        )
-
-        if support_async_endpoints:
-            self.async_notify_topic = sns.Topic(self, "SageMakerAsyncTopic")
-            self.async_notify_topic.add_subscription(subs.LambdaSubscription(self.caller_lambda))
+        }
+        if thumbnail_input_jsonpath is None:
+            # No need to upload this payload to S3: Lambda can directly invoke SageMaker on S3Input
+            # if async, or pass the object if sync.
+            body_upload = None
         else:
-            self.async_notify_topic = None
+            inf_req_body["S3Thumbnails"] = thumbnail_input_jsonpath
+            # Since our Body.S3Input doesn't contain the *entire* endpoint input (as the raw
+            # Textract JSON is missing the S3Thumbnails link), to call an async SM endpoint Lambda
+            # will need to upload the above `inf_req_body` JSON to S3 first:
+            body_upload = {
+                "Bucket": output_bucket.bucket_name,
+                "Key": sfn.JsonPath.format(
+                    "requests/{}",
+                    textracted_input_jsonpath["Key"],
+                ),
+            }
 
-        self.sfn_task = sfn_tasks.LambdaInvoke(
+        self.sfn_task = SageMakerSSMStep(
             self,
             "NLPEnrichmentModel",
             comment="Post-Process the Textract result with Amazon SageMaker",
-            lambda_function=self.caller_lambda,
-            integration_pattern=(
-                sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN
-                if support_async_endpoints
-                else sfn.IntegrationPattern.REQUEST_RESPONSE
-            ),
+            lambda_function=shared_sagemaker_caller_lambda,
+            lambda_role=lambda_role,
+            support_async_endpoints=support_async_endpoints,
             payload=sfn.TaskInput.from_object(
                 {
-                    "Body": {
-                        "S3Input": {
-                            "Bucket": sfn.JsonPath.string_at("$.Textract.Bucket"),
-                            "Key": sfn.JsonPath.string_at("$.Textract.Key"),
-                        },
-                        "S3Output": {
-                            "Bucket": output_bucket.bucket_name,
-                            "Key": sfn.JsonPath.string_at("$.Textract.Key"),
-                        },
-                    },
-                    # Explicit ContentType is necessary for async integration at time of writing,
-                    # because otherwise the endpoint mis-recognises the request as octet-stream:
+                    # Because the caller lambda can be shared, we need to specify the param on req:
+                    "EndpointNameParam": self.endpoint_param.parameter_name,
+                    "Body": inf_req_body,
+                    **({"BodyUpload": body_upload} if body_upload else {}),
                     "ContentType": "application/json",
                     **({"TaskToken": sfn.JsonPath.task_token} if support_async_endpoints else {}),
                 }
             ),
-            payload_response_only=None if support_async_endpoints else True,
-            result_path="$.Textract",  # Overwrite the Textract output state
+            # We call the output variable 'Textract' here because it's an augmented Textract JSON -
+            # so downstream components can treat it broadly as a Textract result:
+            result_path="$.Textract",
             timeout=Duration.minutes(30),
         )
 
@@ -156,14 +155,4 @@ class SageMakerEnrichmentStep(Construct):
             Prefix to add to generated statement IDs for uniqueness, or "", or None to suppress
             SIDs.
         """
-        if not self.async_notify_topic:
-            return []
-
-        return [
-            PolicyStatement(
-                actions=["sns:Publish"],
-                effect=Effect.ALLOW,
-                resources=[self.async_notify_topic.topic_arn],
-                sid=None if sid_prefix is None else (sid_prefix + "PublishSageMakerTopic"),
-            )
-        ]
+        return self.sfn_task.sagemaker_sns_statements(sid_prefix=sid_prefix)

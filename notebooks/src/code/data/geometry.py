@@ -3,7 +3,7 @@
 """Geometry utilities for working with LayoutLM, Amazon Textract, and SageMaker Ground Truth
 """
 # Python Built-Ins:
-from typing import Iterable, Union
+from typing import Iterable, Optional, Union
 
 # External Dependencies:
 import numpy as np
@@ -154,6 +154,34 @@ class BoundingBoxAnnotationResult:
     def boxes(self):
         return self._boxes
 
+    def normalized_boxes(
+        self,
+        return_tensors: Optional[str] = None,
+    ):
+        """Annotation boxes in 0-1000 normalized x0,y0,x1,y1 array/tensor format as per LayoutLM"""
+        raw_zero_to_one_list = [
+            [
+                box.rel_left,
+                box.rel_top,
+                box.rel_right,
+                box.rel_bottom,
+            ]
+            for box in self._boxes
+        ]
+        if return_tensors == "np" or not return_tensors:
+            if len(raw_zero_to_one_list) == 0:
+                npresult = np.zeros((0, 4), dtype="long")
+            else:
+                npresult = (np.array(raw_zero_to_one_list) * 1000).astype("long")
+            return npresult if return_tensors else npresult.tolist()
+        elif return_tensors == "pt":
+            if len(raw_zero_to_one_list) == 0:
+                return torch.zeros((0, 4), dtype=torch.long)
+            else:
+                return (torch.FloatTensor(raw_zero_to_one_list) * 1000).long()
+        else:
+            raise ValueError("return_tensors must be None, 'np' or 'pt'. Got: %s" % return_tensors)
+
 
 def layoutlm_boxes_from_trp_blocks(
     textract_blocks: Iterable[
@@ -168,7 +196,7 @@ def layoutlm_boxes_from_trp_blocks(
             trp.Page,
         ]
     ],
-    return_tensors: str = "np",
+    return_tensors: Optional[str] = None,
 ):
     """List of TRP 'blocks' to array of 0-1000 normalized x0,y0,x1,y1 for LayoutLM
 
@@ -181,8 +209,9 @@ def layoutlm_boxes_from_trp_blocks(
     textract_blocks :
         Iterable of any Textract TRP objects including a 'geometry' property e.g. Word, Line, Cell,
         etc.
-    return_tensors : str
-        Either "np" (default) to return a numpy array or "pt" to return a torch.LongTensor.
+    return_tensors :
+        None (default) to return plain nested lists of ints. "np" to return a numpy array or "pt"
+        to return a torch.LongTensor.
 
     Returns
     -------
@@ -199,10 +228,17 @@ def layoutlm_boxes_from_trp_blocks(
         ]
         for block in textract_blocks
     ]
-    if return_tensors == "np":
-        return np.array(raw_zero_to_one_list) * 1000
+    if return_tensors == "np" or not return_tensors:
+        if len(raw_zero_to_one_list) == 0:
+            npresult = np.zeros((0, 4), dtype="long")
+        else:
+            npresult = (np.array(raw_zero_to_one_list) * 1000).astype("long")
+        return npresult if return_tensors else npresult.tolist()
     elif return_tensors == "pt":
-        return (torch.FloatTensor(raw_zero_to_one_list) * 1000).long()
+        if len(raw_zero_to_one_list) == 0:
+            return torch.zeros((0, 4), dtype=torch.long)
+        else:
+            return (torch.FloatTensor(raw_zero_to_one_list) * 1000).long()
     else:
         raise ValueError(
             "return_tensors must be 'np' or 'pt' for layoutlm_boxes_from_trp_blocks(). Got: %s"

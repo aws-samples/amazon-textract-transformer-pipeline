@@ -59,6 +59,7 @@ dictConfig(
 )
 
 # Now import the submodules:
+from . import deployment
 from . import preproc
 from . import project
 from . import smgt

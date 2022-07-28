@@ -10,8 +10,39 @@ import tarfile
 from typing import Optional
 
 # External Dependencies:
+try:
+    from datasets import disable_progress_bar as disable_datasets_progress_bar
+except ImportError:  # Not available in datasets <v2.0.0
+    disable_datasets_progress_bar = None
+from torch import use_deterministic_algorithms
 from transformers import HfArgumentParser, TrainingArguments
 from transformers.trainer_utils import IntervalStrategy
+
+
+def get_n_cpus():
+    return int(os.environ.get("SM_NUM_CPUS", len(os.sched_getaffinity(0))))
+
+
+def get_n_gpus():
+    return int(os.environ.get("SM_NUM_GPUS", 0))
+
+
+def get_default_num_workers():
+    """Choose a sensible default dataloader_num_workers based on available hardware"""
+    n_cpus = get_n_cpus()
+    n_gpus = get_n_gpus()
+    # Don't create so many workers you lock all processes into resource contention:
+    max_workers = max(0, n_cpus - 2)
+    if n_gpus:
+        # Don't create unnecessarily high numbers of workers per GPU:
+        # (Which can cause CUDAOutOfMemory e.g. on p3.16xlarge, or RAM exhaustion with SageMaker
+        # Training Compiler)
+        max_workers = min(
+            max_workers,
+            max(8, n_gpus * 4),
+        )
+
+    return max(0, max_workers)
 
 
 @dataclass
@@ -23,7 +54,7 @@ class SageMakerTrainingArguments(TrainingArguments):
 
     dataloader_num_workers: int = field(
         # A better default for single-instance, single-device, CPU-bottlenecked training:
-        default=max(0, int(os.environ.get("SM_NUM_CPUS", 0)) - 2),
+        default=get_default_num_workers(),
         metadata={
             "help": (
                 "Number of subprocesses to use for data loading (PyTorch only). "
@@ -31,8 +62,31 @@ class SageMakerTrainingArguments(TrainingArguments):
             ),
         },
     )
+    dataproc_num_workers: Optional[int] = field(
+        # Our data pre-processing is explicitly configured to run in the lead process and then load
+        # from cache for other processes - so we can use lots of workers because the lead proc will
+        # be running it alone:
+        default=max(1, get_n_cpus() - 2),
+        metadata={
+            "help": (
+                "Number of subprocesses to use for data preparation before training commences. "
+                "0 means that the data will be loaded in the main process (Good for debug)."
+            ),
+        },
+    )
+    ddp_find_unused_parameters: Optional[bool] = field(
+        default=True,
+        metadata={
+            "help": (
+                "For DistributedDataParallel training, LayoutLMv2/XLM require "
+                "find_unused_parameters=True because of unused parameters in the model structure. "
+                "For LLMv1 in DDP mode you could turn this off for a performance boost."
+            )
+        },
+    )
     disable_tqdm: Optional[bool] = field(
         # Log streams can't render progress bars like a GUI terminal
+        # NOTE: If you run into problems debugging dataset prep, you may like to enable progress
         default=True,
         metadata={"help": "TQDM progress bars are disabled by default for SageMaker/CloudWatch."},
     )
@@ -73,6 +127,11 @@ class SageMakerTrainingArguments(TrainingArguments):
         default="epoch",
         metadata={"help": "The evaluation strategy to use."},
     )
+    full_determinism: bool = field(
+        # (This will be a standard TrainingArg as of 4.19.0, but isn't in the current 4.17)
+        default=False,
+        metadata={"help": ("Will be automatically enabled for this script if `seed` is truthy.")},
+    )
     save_strategy: IntervalStrategy = field(
         # Should match evaluation strategy for early stopping to work
         default="epoch",
@@ -109,7 +168,7 @@ class SageMakerTrainingArguments(TrainingArguments):
             "help": (
                 "Overwrite the content of the output directory."
                 "Use this to continue training if output_dir points to a checkpoint directory."
-            )
+            ),
         },
     )
     # Tweak default batch sizes for this model & task
@@ -119,9 +178,38 @@ class SageMakerTrainingArguments(TrainingArguments):
     per_device_eval_batch_size: int = field(
         default=8, metadata={"help": "Batch size per GPU/TPU core/CPU for evaluation."}
     )
+    remove_unused_columns: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to automatically remove datasets.Dataset columns unused by the "
+                "model.forward() method. This should be False by default, as our implementation "
+                "either uses a custom data collator (LLMv1) or pre-processes the dataset (v2/XLM)."
+            ),
+        },
+    )
 
     def __post_init__(self):
         super().__post_init__()
+        # HF datasets library requires n_proc = None, not 0, if workers are disabled:
+        if not self.dataproc_num_workers:
+            self.dataproc_num_workers = None
+        # ...And it doesn't see the TrainingArguments progress setting by default:
+        if self.disable_tqdm and disable_datasets_progress_bar:
+            disable_datasets_progress_bar()
+        # This script uses cuBLAS operators that require a workspace to run in deterministic /
+        # reproducible mode. You could alternatively set ":16:8" to save (about 24MiB of) GPU
+        # memory at the cost of performance. More information at:
+        # https://docs.nvidia.com/cuda/cublas/index.html#cublasApi_reproducibility
+        if self.seed:
+            self.full_determinism = True
+            if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
+                print(
+                    "Defaulting CUBLAS_WORKSPACE_CONFIG=':4096:8' to enable deterministic ops as "
+                    "`seed` is set."
+                )
+                os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+            use_deterministic_algorithms(True)
         # Normalize early stopping configuration if it seems enabled:
         if self.early_stopping_patience is not None or self.early_stopping_threshold is not None:
             # The EarlyStoppingCallback requires load_best_model_at_end=True:
@@ -225,12 +313,24 @@ class DataTrainingArguments:
         default="labels",
         metadata={"help": "Attribute name of the annotations in the manifest file"},
     )
+    dataproc_batch_size: int = field(
+        default=16,
+        metadata={
+            # RAM usage in tests on p3/g4dn instances suggests this could probably be much higher
+            # if needed, but I'm not sure whether it'd actually improve speed.
+            "help": "Base batch size for (up-front, before training) data pre-processing."
+        },
+    )
     max_seq_length: Optional[int] = field(
         default=512,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
             "than this will be split."
         },
+    )
+    pad_to_multiple_of: Optional[int] = field(
+        default=8,
+        metadata={"help": "Pad sequences to a multiple of this value, for tensor core efficiency"},
     )
     # TODO: Check this is observed correctly
     max_train_samples: Optional[int] = field(
@@ -242,7 +342,10 @@ class DataTrainingArguments:
     )
     task_name: Optional[str] = field(
         default="ner",
-        metadata={"help": "The name of the task (ner, mlm...)."},
+        metadata={
+            "help": "The name of the task. This script currently supports 'ner' for entity "
+            "recognition or 'mlm' for pre-training (masked language modelling)."
+        },
     )
     textract: Optional[str] = field(
         default=os.environ.get("SM_CHANNEL_TEXTRACT"),
@@ -259,6 +362,14 @@ class DataTrainingArguments:
     validation: Optional[str] = field(
         default=os.environ.get("SM_CHANNEL_VALIDATION"),
         metadata={"help": "The data channel (local folder) for model evaluation"},
+    )
+    images: Optional[str] = field(
+        default=os.environ.get("SM_CHANNEL_IMAGES"),
+        metadata={"help": "The data channel containing (resized) page images"},
+    )
+    images_prefix: str = field(
+        default="",
+        metadata={"help": "Prefix mapping manifest S3 URIs to the 'images' channel"},
     )
 
     # NER (token classification) specific parameters:
@@ -280,6 +391,20 @@ class DataTrainingArguments:
     # MLM (pre-training) specific parameters:
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Ratio of tokens to mask for masked language modeling loss"}
+    )
+    tiam_probability: float = field(
+        default=0.15,
+        metadata={
+            "help": "Ratio of text lines to mask in the image for LayoutLMv2/XLM 'Text-Image "
+            "Alignment' pre-training loss. Set 0 to disable TIA in pre-training. Ignored for LLMv1."
+        },
+    )
+    tim_probability: float = field(
+        default=0.2,
+        metadata={
+            "help": "Ratio of page images to randomly permute for LayoutLMv2/XLM 'Text-Image "
+            "Matching' pre-training loss. Set 0 to disable TIM in pre-training. Ignored for LLMv1.",
+        },
     )
 
     def __post_init__(self):

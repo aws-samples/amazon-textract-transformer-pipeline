@@ -47,6 +47,7 @@ class ProjectSession:
         "static/InputBucket": "pipeline_input_bucket_name",
         "static/ReviewsBucket": "pipeline_reviews_bucket_name",
         "static/PipelineStateMachine": "pipeline_sfn_arn",
+        "static/ThumbnailsCallbackTopicArn": "thumbnails_callback_topic_arn",
         "static/ModelCallbackTopicArn": "model_callback_topic_arn",
         "static/ModelResultsBucket": "model_results_bucket",
         "static/SMDockerBuildRole": "sm_image_build_role",
@@ -55,6 +56,7 @@ class ProjectSession:
         "config/HumanReviewFlowArn": "a2i_review_flow_arn_param",
         "config/EntityConfiguration": "entity_config_param",
         "config/SageMakerEndpointName": "sagemaker_endpoint_name_param",
+        "config/ThumbnailEndpointName": "thumbnail_endpoint_name_param",
     }
 
     # Static values (from SSM):
@@ -66,10 +68,12 @@ class ProjectSession:
     model_callback_topic_arn: str
     model_results_bucket: str
     sm_image_build_role: str
+    thumbnails_callback_topic_arn: str
     # Configurable parameters (names in SSM):
     a2i_review_flow_arn_param: str
     entity_config_param: str
     sagemaker_endpoint_name_param: str
+    thumbnail_endpoint_name_param: str
 
     def __init__(self, project_id: str):
         """Create a ProjectSession

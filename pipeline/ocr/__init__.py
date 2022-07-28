@@ -11,6 +11,7 @@ import aws_cdk.aws_dynamodb as dynamodb
 from aws_cdk.aws_iam import Effect, PolicyDocument, PolicyStatement, Role, ServicePrincipal
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
 from aws_cdk.aws_lambda_python_alpha import PythonFunction
+from aws_cdk.aws_s3 import Bucket
 import aws_cdk.aws_sns as sns
 import aws_cdk.aws_sns_subscriptions as subs
 import aws_cdk.aws_stepfunctions as sfn
@@ -28,8 +29,8 @@ class TextractOcrStep(Construct):
     """CDK Construct for a concurrency- & TPS-limiting Textract OCR step in a Step Function
 
     This construct's `.sfn_task` expects inputs with $.Input.Bucket and $.Input.Key properties
-    specifying the location of the raw input document, and will add a $.Textract object to the
-    output state with Bucket and Key pointing to the consolidated Textract JSON object.
+    specifying the location of the raw input document, and will return an object with Bucket and
+    Key pointing to the consolidated Textract JSON object.
     """
 
     def __init__(
@@ -37,41 +38,44 @@ class TextractOcrStep(Construct):
         scope: Construct,
         id: str,
         lambda_role: Role,
+        output_bucket: Bucket,
+        output_prefix: str,
         concurrency_limit: int = 90,
         warmup_tps_limit: float = 2,
-        timeout_excluding_queue: Duration = Duration.minutes(12),
+        timeout_excluding_queue: Duration = Duration.minutes(25),
         timeout_including_queue: Duration = Duration.minutes(30),
         **kwargs,
     ):
         """Create a TextractOcrStep
 
-        Arguments
-        ---------
+        Parameters
+        ----------
         scope : Construct
             CDK construct scope
         id : str
             CDK construct ID
         lambda_role : aws_iam.Role
             IAM Role that the Textract-invoking Lambda function will run with
+        output_bucket : aws_s3.Bucket
+            (Pre-existing) S3 bucket where Textract result files should be stored
+        output_prefix : str
+            Prefix under which Textract result files should be stored in S3 (under this prefix,
+            the original input document keys will be mapped).
         concurrency_limit : int
             Maximum number of Textract jobs which may be in-progress at a time. Additional requests
             will be pooled for retry via AWS Step Functions (order not guaranteed). Refer to your
             account & region's Amazon Textract quotas to set, and consider reducing a margin in
             case your usage is limited more in practice by the rate of result-fetching Get*** APIs
-            than the total job concurrency limit. Default 90.
+            than the total job concurrency limit.
         warmup_tps_limit : float
             Limit on maximum rate of new Textract job creation. Additional requests will be pooled
             for retry via AWS Step Functions (order not guaranteed). Refer to your account &
-            region's Amazon Textract Quotas. Default 2.
-        concurrency_limit : int
-            Maximum number of Textract jobs which may be in-progress at a time. Additional requests
-            will be pooled for retry via AWS Step Functions (order not guaranteed). Refer to your
-            account & region's Amazon Textract quotas to set. Default 100.
+            region's Amazon Textract Quotas.
         timeout_excluding_queue : aws_cdk.Duration
-            Timeout for the Textract processing job itself to be considered as failed. Default 10m.
+            Timeout for the Textract processing job itself to be considered as failed.
         timeout_including_queue : aws_cdk.Duration
             Timeout for the end-to-end step (including concurrency management / queuing) to be
-            considered as failed. Default 20m.
+            considered as failed.
         """
         super().__init__(scope, id, **kwargs)
 
@@ -146,10 +150,10 @@ class TextractOcrStep(Construct):
             },
             index="main.py",
             handler="handler",
-            memory_size=128,
+            memory_size=1024,
             role=lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=Duration.seconds(60),
+            timeout=Duration.minutes(3),
         )
         self.sns_topic.add_subscription(subs.LambdaSubscription(self.caller_lambda))
 
@@ -211,22 +215,21 @@ class TextractOcrStep(Construct):
             "TextractTask",
             comment="Extract document text and structure with Amazon Textract",
             state_machine=self.textract_state_machine,
-            # Map 'Textract' field of pipeline machine to 'Output' of Textract-only machine:
             input=sfn.TaskInput.from_object(
                 {
                     "Input": {
                         "Bucket": sfn.JsonPath.string_at("$.Input.Bucket"),
                         "Key": sfn.JsonPath.string_at("$.Input.Key"),
                     },
-                    "Output": sfn.JsonPath.string_at("$.Textract"),
+                    "Output": {
+                        "Bucket": output_bucket.bucket_name,
+                        "Prefix": output_prefix,
+                    },
                 }
             ),
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
             timeout=timeout_including_queue,
-            # ...And inverse map 'Output' field of Textract-only machine to 'Textract' in pipeline:
-            result_selector={
-                # ($.Output here is the final result state from the plain-Textract state machine)
-                "Input": sfn.JsonPath.string_at("$.Output.Input"),
-                "Textract": sfn.JsonPath.string_at("$.Output.Output"),
-            },
+            # We overwrite the entire SFN state here because this step is used in a Parallel with
+            # thumbnail generation:
+            output_path=sfn.JsonPath.string_at("$.Output.Output"),
         )
