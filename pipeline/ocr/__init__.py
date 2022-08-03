@@ -50,30 +50,30 @@ class TextractOcrStep(Construct):
 
         Parameters
         ----------
-        scope : Construct
+        scope :
             CDK construct scope
-        id : str
+        id :
             CDK construct ID
-        lambda_role : aws_iam.Role
+        lambda_role :
             IAM Role that the Textract-invoking Lambda function will run with
-        output_bucket : aws_s3.Bucket
+        output_bucket :
             (Pre-existing) S3 bucket where Textract result files should be stored
-        output_prefix : str
+        output_prefix :
             Prefix under which Textract result files should be stored in S3 (under this prefix,
             the original input document keys will be mapped).
-        concurrency_limit : int
+        concurrency_limit :
             Maximum number of Textract jobs which may be in-progress at a time. Additional requests
             will be pooled for retry via AWS Step Functions (order not guaranteed). Refer to your
             account & region's Amazon Textract quotas to set, and consider reducing a margin in
             case your usage is limited more in practice by the rate of result-fetching Get*** APIs
             than the total job concurrency limit.
-        warmup_tps_limit : float
+        warmup_tps_limit :
             Limit on maximum rate of new Textract job creation. Additional requests will be pooled
             for retry via AWS Step Functions (order not guaranteed). Refer to your account &
             region's Amazon Textract Quotas.
-        timeout_excluding_queue : aws_cdk.Duration
+        timeout_excluding_queue :
             Timeout for the Textract processing job itself to be considered as failed.
-        timeout_including_queue : aws_cdk.Duration
+        timeout_including_queue :
             Timeout for the end-to-end step (including concurrency management / queuing) to be
             considered as failed.
         """

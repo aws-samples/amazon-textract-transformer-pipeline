@@ -130,12 +130,12 @@ def extract_textract_page(doc_json: dict, page_num: int, trp_doc: Optional[trp.D
     return {"doc_json": result_json, "trp_doc": trp.Document(result_json)}
 
 
-def is_async_endpoint() -> bool:
+def is_async_endpoint() -> Optional[bool]:
     """Check whether this script is running in an asynchronous SageMaker inference endpoint
 
     Unfortunately, I've not found any local (environment variable, config file) signals for this
     yet - so this function calls the DescribeEndpoint API to check. If the status can't be
-    determined (e.g. not running in a SageMaker endpoint, or can't access the API), returns False.
+    determined (e.g. not running in a SageMaker endpoint, or can't access the API), returns None.
     """
     ENDPOINT_METADATA_FILEPATH = "/opt/ml/.sagemaker_infra/endpoint-metadata.json"
     try:
@@ -329,11 +329,7 @@ def model_fn(model_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     config = AutoConfig.from_pretrained(model_dir)
     try:
-        processor = AutoProcessor.from_pretrained(
-            model_dir,
-            apply_ocr=False,
-            do_resize=False,
-        )
+        processor = AutoProcessor.from_pretrained(model_dir, apply_ocr=False, do_resize=False)
     except (EntryNotFoundError, OSError):
         processor = None
     except ValueError as ve:

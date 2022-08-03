@@ -19,7 +19,7 @@ Since Textract outputs both the detected text and the *position* of each 'block'
 - Using position information together with string matching or Regular Expressions. For example "Find text matching XX/XX/XXXX within the top 5% of the page height"
 - Running extracted text through standard linear text-sequence processing models or AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze. For example picking out `date` entities on a purchase order that might not be explicitly "labelled" in the text - perhaps because the date just appears by itself in the header.
 
-But what about use cases needing still more intelligence? Where, even with these tools, it's too challenge to scale up rule-based logic to extract the specific information you need?
+But what about use cases needing still more intelligence? Where, even with these tools, it's too challenging to scale up rule-based logic to extract the specific information you need?
 
 For some use cases incoming documents are highly variable, so simple position-based templating methods may not work well... And the content of the text needs to be accounted for as well. For example:
 

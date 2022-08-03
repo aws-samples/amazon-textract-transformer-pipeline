@@ -653,32 +653,32 @@ def collate_data_manifest(
 
     Parameters
     ----------
-    manifest_file : str
+    manifest_file :
         File name/path to output to
     input_manifest :
         Path to a JSONLines input manifest of objects (typically docs the page images linked yet),
         or an in-memory list/iterable of objects of the same.
-    textract_s3_prefix : str
+    textract_s3_prefix :
         's3://...' root URI under which Textract results are stored, used for mapping from Textract
         result URIs to expected page image URIs.
-    imgs_s3_prefix : str
+    imgs_s3_prefix :
         's3://...' root URI under which cleaned page images are stored, with filenames generated
         from documents as per `clean_dataset_for_img_ocr()`
-    by : str
+    by :
         Set 'page' (default) to produce one manifest record per page; or 'doc' to produce one
         manifest record per doc with an array of page images.
-    no_content : Optional[str]
+    no_content :
         Set 'omit' to skip pages with no text content detected by Textract (i.e. not generate a
         record for page-based manifest; omit from 'page-refs' for doc-based manifest). Set 'flag'
         to add a 'has-content' (bool, for page-based) or 'pages-have-content' (List[bool], for
         doc-based) attribute to the output. (Default None - no checking)
         manifest:
-    progress_desc : str
+    progress_desc :
         Description label for the progress bar (Default 'Building data manifest...')
 
     Returns
     -------
-    warnings : List[DataManifestWarning]
+    warnings :
         List of docs excluded from the manifest due to some inconsistency between Textract result
         and page images on S3. If len()==0, you're good to go. Otherwise, investigate.
     """
