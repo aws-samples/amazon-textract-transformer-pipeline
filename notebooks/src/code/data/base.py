@@ -137,7 +137,14 @@ def find_images_from_textract_path(
         doc_relpath = textract_relpath[: -len("/consolidated.json")]
     else:
         # Also supported: Textract JSON path is same as raw doc/image path
-        if not textract_file_path.rpartition(".")[2] in ("jpg", "jpeg", "pdf", "png", "tiff"):
+        if not textract_file_path.rpartition(".")[2] in (
+            "jpg",
+            "jpeg",
+            "pdf",
+            "png",
+            "tif",
+            "tiff",
+        ):
             logger.warning(
                 "Trying to find thumbnails from a path that doesn't look like either a Textracted "
                 f"JSON (with /consolidated.json) or a raw .jpg/png/pdf/etc: {textract_file_path}"

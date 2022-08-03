@@ -104,6 +104,7 @@ DEFAULT_CONTENT_TYPES = {
     "npz": "application/x-npz",
     "pdf": "application/pdf",
     "png": "image/png",
+    "tif": "image/tiff",
     "tiff": "image/tiff",
     "txt": "text/plain",
 }
