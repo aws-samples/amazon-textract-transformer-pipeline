@@ -4,29 +4,32 @@
 
 In this "Amazon Textract Transformer Pipeline" sample and accompanying [blog post](https://aws.amazon.com/blogs/machine-learning/bring-structure-to-diverse-documents-with-amazon-textract-and-transformer-based-models-on-amazon-sagemaker/), we show how you can also automate more complex and domain-specific extraction tasks by integrating trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/).
 
-We demonstrate **layout-aware entity extraction** on an example use case in finance, for which you could also consider using [Amazon Comprehend's native document analysis feature](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/).
+We demonstrate **multi-modal, layout-aware entity extraction** on an example use case in finance, for which you could now also consider (and may prefer) using **[Amazon Comprehend's native document analysis feature](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/)** and/or [Amazon Textract Queries](https://aws.amazon.com/about-aws/whats-new/2022/04/amazon-textract-launches-queries-feature-analyze-document-api/).
 
-However, this pipeline provides a framework you could further extend or customize for your own datasets and ML-based, OCR post-processing models.
+However, this SageMaker-based pipeline provides an integrated framework you can further extend or customize.
 
 ## Background
 
 To automate document understanding for business processes, we typically need to extract and standardize specific attributes from input documents: For example vendor and line item details from purchase orders; or specific clauses within contracts.
 
-With Amazon Textract's [structure extraction utilities for forms and tables](https://aws.amazon.com/textract/features/), many of these requirements are trivial out of the box with no custom training required. For example: "pull out the text of the third column, second row of the first table on page 1", or "find what the customer wrote in for the `Email address:` section of the form".
+With Amazon Textract's [structure extraction utilities for forms and tables](https://aws.amazon.com/textract/features/), many of these requirements are trivial out of the box with no custom training required. For example: "pull out the text of the third column, second row of the first table on page 1", or "find what the customer wrote in for the `Email address:` section of the form". With the [Queries](https://docs.aws.amazon.com/textract/latest/dg/how-it-works-analyzing.html) feature, you can even ask basic natural-language questions to extract specific data points.
 
-We can also use standard text processing models or AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze extracted text. For example: picking out `date` entities on a purchase order that may not be explicitly "labelled" in the text - perhaps because sometimes the date just appears by itself in the page header. However, many standard approaches treat text as a flat 1D sequence of words.
+Since Textract outputs both the detected text and the *position* of each 'block' down to the word level, downstream approaches for further processing are also flexible - such as:
 
-Since Textract also outputs the *positions* of each detected 'block' of text, we can even write advanced templating rules in our solution code. For example: "Find text matching XX/XX/XXXX within the top 5% of the page height".
+- Using position information together with string matching or Regular Expressions. For example "Find text matching XX/XX/XXXX within the top 5% of the page height"
+- Running extracted text through standard linear text-sequence processing models or AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze. For example picking out `date` entities on a purchase order that might not be explicitly "labelled" in the text - perhaps because the date just appears by itself in the header.
 
-But what about use cases needing still more intelligence? Where, even with these tools, writing rule-based logic to extract the specific information you need is too challenging?
+But what about use cases needing still more intelligence? Where, even with these tools, it's too challenging to scale up rule-based logic to extract the specific information you need?
 
-For some use cases, incoming documents are highly variable so simple position-based templating methods may not work well... And the content of the text needs to be accounted for as well. For example:
+For some use cases incoming documents are highly variable, so simple position-based templating methods may not work well... And the content of the text needs to be accounted for as well. For example:
 
 - In analysing traditional [letters](https://en.wikipedia.org/wiki/Letter_(message)), extracting sender and recipient **addresses** may be difficult for pure text-processing models (because location cues are important), but also hard via templating (because different letterheads or formatting choices may significantly offset the address locations).
 - In commercial business documents, the **name of the vendor** may often be present in front-matter or headers, but usually not specifically labelled e.g. as `Vendor:` - which might help Textract's Key-Value feature extract it.
 - For detecting **subheadings within documents**, it may be possible to write general rules based on text size and relative position - but these could grow very complex if considering, for example, documents with multiple columns or high variability in text size.
 
-In all these cases and others like them, it may be useful to apply an ML model that **jointly** considers the text itself, and its position on the page.
+In all these cases and others like them, it may be useful to apply an ML model that **jointly** considers the text itself, its position on the page - and perhaps other formatting information too.
+
+For users wanting to apply specific model architectures from open source; to work with less well-supported languages or domain-specific jargon; or to customize task types beyond plain entity recognition - this sample demonstrates using multi-modal document AI models from [Hugging Face Transformers](https://huggingface.co/docs/transformers/index) together with Amazon Textract.
 
 
 ## Solution Overview
@@ -84,7 +87,7 @@ The bootstrap stack pretty much runs the following steps 0-3 for you in an AWS C
 To build and deploy this solution, you'll first need:
 
 - The [AWS CDK (v2)](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_install), which depends on [NodeJS](https://nodejs.org/en/).
-- [Python v3.6+](https://www.python.org/)
+- [Python v3.8+](https://www.python.org/)
 - [Docker](https://www.docker.com/products/docker-desktop) installed and running (which is used for [bundling Python Lambda functions](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-lambda-python-alpha-readme.html)).
   - You can see the [discussion here](https://github.com/aws/aws-cdk/issues/16209) on using [podman](https://podman.io/) as an alternative with CDK if Docker Desktop licensing is not available for you.
 - (Optional but recommended) consider using [Poetry](https://python-poetry.org/docs/#installation) rather than Python's built-in `pip`.

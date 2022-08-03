@@ -1,14 +1,21 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""Lambda to call the (real-time or async) SageMaker enrichment model and handle SNS callbacks
+"""Lambda to call a (real-time or async) SageMaker endpoint and handle SNS callbacks
+
+Although AWS Step Functions integrates directly with SageMaker, this Lambda function implements
+some extra features to help build compact and effective SFn workflows: Particularly, looking up
+a configured endpoint name from SSM and transparently uploading request payload for async.
 
 In general, properties of the input event are forwarded to boto3 SageMakerRuntime client's
 invoke_endpoint or invoke_endpoint_async method, except that:
 
-- If 'EndpointName' is not provided, it's read from environment variable or SSM parameter.
-- If 'Accept' is not explicitly set, it's defaulted to 'application/json'.
+- If 'EndpointName' is not provided, it's read from either:
+    - SSM parameter given by 'EndpointNameParam' (if present), or
+    - Environment variable DEFAULT_ENDPOINT_NAME (if present), or
+    - SSM parameter given by environment variable DEFAULT_ENDPOINT_NAME_PARAM.
+- If 'Accept' is not explicitly set, it's defaulted to 'application/json'
 - If 'TaskToken' is provided, it's interpreted as a task token to return results to Step Functions
-  via async integration.
+    via async integration.
 
 Checks for SSM EndpointName, and whether an endpoint is asynchronous, are cached for
 CACHE_TTL_SECONDS to reduce GetParameter/DescribeEndpoint API volume.
@@ -17,19 +24,24 @@ For synchronous endpoints
 -------------------------
 
 - If 'Body' is an object type other than a string, it's automatically JSON stringified for you.
-  and 'ContentType' defaulted to 'application/json' if not explicitly set.
+    and 'ContentType' defaulted to 'application/json' if not explicitly set.
 
 For asynchronous endpoints
 --------------------------
 
 - The SFn TaskToken is passed through using SageMaker's 'CustomAttributes' parameter, so this is
-  not available for other purposes.
-- If 'Body' (which is not supported for async as the input should be an object on S3) is present,
-  the function will try to interpret it (or Body.S3Input) as a pointer to an S3 InputLocation.
+    not available for other purposes.
+- 'Body' is not directly supported because async endpoints need to take input from S3. However:
+    - If a 'BodyUpload' dict of { Bucket, Key } is provided, this Lambda will transparently upload
+        the Body data for you (and set 'InputLocation' for SageMaker).
+    - If 'Body' or 'Body.S3Input' can be interpreted as a pointer to an S3 input location, this
+        will be used as the endpoint input ('InputLocation').
+- If 'ContentType' is not explicitly set, it's defaulted based on the file extension of the object
+    key in S3 if known.
 - If 'InputLocation' (usually an "s3://..." URI) is a dict with { Bucket, Key } or { S3Uri }, it
-  will be converted automatically.
+    will be converted automatically.
 
-Return Value
+Return value
 ------------
 
 result : dict
@@ -37,14 +49,23 @@ result : dict
     callback messages, result is a batch of responses from SFn from recording each task result. For
     inference requests when TaskToken is provided, result may be a SFn response (if the endpoint is
     synchronous) Or just the SageMaker InvokeEndpointAsync response (if async).
+
+Step Function callback value
+----------------------------
+
+For successful invocations, this function calls back to Step Functions with:
+- The JSON response body, for synchronous endpoints.
+- An object with { Bucket, Key, S3Uri } describing the output location, for async endpoints.
 """
 
 # Python Built-Ins:
+import io
 import json
 import logging
 import os
 import sys
 import traceback
+from typing import Optional
 
 # External Dependencies:
 import boto3
@@ -73,6 +94,20 @@ else:
         "Could not interpret boolean env var SUPPORT_ASYNC_ENDPOINTS. Got: '%s'"
         % (SUPPORT_ASYNC_ENDPOINTS,)
     )
+DEFAULT_CONTENT_TYPES = {
+    "csv": "text/csv",
+    "jpeg": "image/jpg",
+    "jpg": "image/jpg",
+    "json": "application/json",
+    "jsonl": "application/jsonl",
+    "npy": "application/x-npy",
+    "npz": "application/x-npz",
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "tif": "image/tiff",
+    "tiff": "image/tiff",
+    "txt": "text/plain",
+}
 
 
 class MalformedRequest(ValueError):
@@ -86,7 +121,7 @@ class InferenceFailed(ValueError):
 class S3ObjectSpec:
     """Utility class for parsing an S3 location spec from a JSON-able dict
 
-    Shared with SageMaker endpoint inference.py
+    Format shared with SageMaker endpoint inference.py
     """
 
     bucket: str
@@ -126,14 +161,12 @@ def is_endpoint_async(endpoint_name: str) -> bool:
 
 
 @cached(cache=TTLCache(maxsize=2, ttl=CACHE_TTL_SECONDS))
-def get_endpoint_name_from_ssm() -> str:
+def get_endpoint_name_from_ssm(param_name: Optional[str] = None) -> str:
     """Fetch configured endpoint name from SSM (with caching)
 
     Fetches the SageMaker endpoint name from SSM, or serves a recent cached result if one is known.
     """
-    result = ssm.get_parameter(Name=DEFAULT_ENDPOINT_NAME_PARAM,)[
-        "Parameter"
-    ]["Value"]
+    result = ssm.get_parameter(Name=param_name or DEFAULT_ENDPOINT_NAME_PARAM)["Parameter"]["Value"]
     logger.info(f"Endpoint name from SSM is: {result}")
     return result
 
@@ -181,14 +214,17 @@ def handle_request(event: dict, context):
     """Lambda handler for inference requests"""
 
     if "EndpointName" not in event:
-        if DEFAULT_ENDPOINT_NAME:
+        if "EndpointNameParam" in event:
+            event["EndpointName"] = get_endpoint_name_from_ssm(event.pop("EndpointNameParam"))
+        elif DEFAULT_ENDPOINT_NAME:
             event["EndpointName"] = DEFAULT_ENDPOINT_NAME
         elif DEFAULT_ENDPOINT_NAME_PARAM:
             event["EndpointName"] = get_endpoint_name_from_ssm()
         else:
             raise MalformedRequest(
-                "Input must include 'EndpointName' if neither DEFAULT_ENDPOINT_NAME nor "
-                "DEFAULT_ENDPOINT_NAME_PARAM environment variables are set"
+                "Input must include 'EndpointName' or 'EndpointNameParam' if neither "
+                "DEFAULT_ENDPOINT_NAME nor DEFAULT_ENDPOINT_NAME_PARAM environment variables are "
+                "set"
             )
 
     if "Accept" not in event:
@@ -225,6 +261,9 @@ def prepare_invoke_sync(event: dict) -> dict:
         if "ContentType" not in event:
             event["ContentType"] = "application/json"
 
+    # Ignore any special arguments used by this Lambda for async:
+    event.pop("BodyUpload", None)
+
     return json.loads(smruntime.invoke_endpoint(**event)["Body"].read())
 
 
@@ -241,57 +280,75 @@ def prepare_invoke_async(event: dict, task_token: str) -> dict:
     event["CustomAttributes"] = task_token
 
     if "Body" in event:
-        # Body is not supported by async (should be a pointer to where the input data is on S3),
-        # but if the provided Body is obviously an S3 pointer, we'll work with it:
+        # Async endipont invocations need to be by reference to S3, not inline: But we have options
         req_body = event.pop("Body")
-        if isinstance(req_body, str):
-            req_body_lower = req_body.lower()
-            if req_body_lower.startswith("s3://") or req_body_lower.startswith("https://"):
-                event["InputLocation"] = req_body
-            else:
+        if "BodyUpload" in event:
+            # If a configuration is specified to upload the data to S3, we can use that.
+            # S3 upload requires a file-like object:
+            upload_loc = S3ObjectSpec(event.pop("BodyUpload"))
+            if isinstance(req_body, (dict, list, tuple, set, bool, int, float)):
+                req_body = json.dumps(req_body)
+            if isinstance(req_body, str):
+                req_body = req_body.encode("utf-8")
+            if isinstance(req_body, bytes):
+                req_body = io.BytesIO(req_body)
+            logger.info("Uploading request body for async endpoint to %s", upload_loc.uri)
+            s3.Object(upload_loc.bucket, upload_loc.key).upload_fileobj(req_body)
+            event["InputLocation"] = upload_loc.uri
+        else:
+            # If the provided Body is obviously an S3 pointer, we can use the pre-existing upload:
+            if isinstance(req_body, str):
+                req_body_lower = req_body.lower()
+                if req_body_lower.startswith("s3://") or req_body_lower.startswith("https://"):
+                    event["InputLocation"] = req_body
+                else:
+                    try:
+                        s3spec = S3ObjectSpec(json.loads(req_body))
+                        event["InputLocation"] = s3spec.uri
+                    except Exception as e:
+                        raise ValueError(
+                            "event.Body string could not be interpreted as an S3://... input URI "
+                            "for async endpoint. Async endpoints only support input from S3 "
+                            "unless an event.BodyUpload location is provided to upload the data."
+                        ) from e
+            elif isinstance(req_body, dict):
+                s3spec = None
                 try:
-                    s3spec = S3ObjectSpec(json.loads(req_body))
-                    event["InputLocation"] = s3spec.uri
-                except Exception as e:
-                    raise ValueError(
-                        "event.Body string could not be interpreted as an S3://... input URI for "
-                        "async endpoint. Async endpoints only support input from S3."
-                    ) from e
-        elif isinstance(req_body, dict):
-            s3spec = None
-            try:
-                s3spec = S3ObjectSpec(req_body)
-            except Exception as e:
-                pass
-            if (not s3spec) and "S3Input" in req_body:
-                try:
-                    s3spec = S3ObjectSpec(req_body["S3Input"])
-                    other_keys = [k for k in req_body if k != "S3Input"]
-                    if len(other_keys):
-                        logger.warning(
-                            "Body keys besides S3Input will not be sent to async endpoint: %s",
-                            other_keys,
-                        )
+                    s3spec = S3ObjectSpec(req_body)
                 except Exception as e:
                     pass
-            if not s3spec:
-                raise ValueError(
-                    "event.Body dict could not be interpreted as an S3 object pointer (with "
-                    ".Bucket and .Key or .S3Uri, or an .S3Input object containing same) for async "
-                    "endpoint. Async endpoints only support input from S3."
-                )
+                if (not s3spec) and "S3Input" in req_body:
+                    try:
+                        s3spec = S3ObjectSpec(req_body["S3Input"])
+                        other_keys = [k for k in req_body if k != "S3Input"]
+                        if len(other_keys):
+                            logger.warning(
+                                "Body keys besides S3Input will not be sent to async endpoint: %s",
+                                other_keys,
+                            )
+                    except Exception as e:
+                        pass
+                if not s3spec:
+                    raise ValueError(
+                        "event.Body dict could not be interpreted as an S3 object pointer (with "
+                        ".Bucket and .Key or .S3Uri, or an .S3Input object containing same) for "
+                        "async endpoint and no event.BodyUpload configuration was provided. Async "
+                        "endpoints only support input from S3."
+                    )
 
-            event["InputLocation"] = s3spec.uri
-        else:
-            raise ValueError(
-                "event.Body could not be interpreted as an S3 object pointer for async endpoint. "
-                f"Async endpoints only support input from S3. Got Body type {type(req_body)}"
-            )
+                event["InputLocation"] = s3spec.uri
+            else:
+                raise ValueError(
+                    "event.Body could not be interpreted as an S3 object pointer for async "
+                    "endpoint and no event.BodyUpload configuration was provided. "
+                    f"Async endpoints only support input from S3. Got Body type {type(req_body)}"
+                )
 
     if "InputLocation" not in event:
         raise MalformedRequest(
-            "When using an async SM endpoint, must provide either event.InputLocation or an "
-            "event.Body that points to an input request object on S3."
+            "When using an async SM endpoint, must provide either event.InputLocation, an "
+            "event.Body that points to an input request object on S3, or an event.BodyUpload "
+            "configuration telling Lambda where to upload the Body data."
         )
     elif isinstance(event["InputLocation"], dict):
         try:
@@ -302,6 +359,12 @@ def prepare_invoke_async(event: dict, task_token: str) -> dict:
                 "event.InputLocation must be an s3:// URI string or an object with .Bucket, .Key "
                 "or .S3Uri."
             )
+
+    if "ContentType" not in event:
+        ext = event["InputLocation"].rpartition(".")[2]
+        if ext in DEFAULT_CONTENT_TYPES:
+            event["ContentType"] = DEFAULT_CONTENT_TYPES[ext]
+            logger.debug("Defaulted ContentType for ext .%s to '%s'", ext, event["ContentType"])
 
     resp = smruntime.invoke_endpoint_async(**event)
     logger.info("Started SageMaker async invocation ID %s", resp["InferenceId"])
@@ -343,7 +406,7 @@ def handle_callback(event: dict, context):
 
 def send_result(
     result: dict,
-    sfn_task_token: str = None,
+    sfn_task_token: Optional[str] = None,
 ) -> dict:
     """Send result object to Step Functions if task token is available, else just return it"""
     if sfn_task_token is None:
@@ -352,7 +415,7 @@ def send_result(
         return sfn.send_task_success(taskToken=sfn_task_token, output=json.dumps(result))
 
 
-def send_error(err: Exception, task_token: str = None):
+def send_error(err: Exception, task_token: Optional[str] = None):
     """Send error to Step Functions if task token is available, else re-raise it"""
     if task_token:
         logger.exception("Reporting unhandled exception to Step Functions")

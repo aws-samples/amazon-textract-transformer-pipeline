@@ -34,6 +34,8 @@ from .iam_utils import (
 from .ocr import TextractOcrStep
 from .postprocessing import LambdaPostprocStep
 from .review import A2IReviewStep
+from .shared.sagemaker import SageMakerCallerFunction
+from .thumbnails import GenerateThumbnailsStep
 
 S3_TRIGGER_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-trigger")
 
@@ -51,6 +53,7 @@ class ProcessingPipeline(Construct):
         id: str,
         input_bucket: s3.Bucket,
         ssm_param_prefix: Union[Token, str],
+        use_thumbnails: bool = True,
         **kwargs,
     ):
         """Create a ProcessingPipeline
@@ -67,6 +70,13 @@ class ProcessingPipeline(Construct):
         ssm_param_prefix : Union[aws_cdk.Token, str]
             A prefix to apply to generated AWS SSM Parameter Store configuration parameter names,
             to help keep the account tidy. Should begin and end with a forward slash.
+        use_thumbnails : bool
+            When `True`, the pipeline is configured to call a page thumbnail image generation
+            endpoint and pass these resized images through to the SageMaker document understanding
+            / enrichment model. Set `False` to skip deploying these features. Pipelines deployed
+            with `use_thumbnails=True` will fail if a thumbnailer endpoint is not set up (see
+            SageMaker notebooks). Pipelines deployed with `use_thumbnails=False` cannot fully
+            utilize model architectures that use page images for inference (such as LayoutLMv2+).
         **kwargs : Any
             Passed through to parent Construct
         """
@@ -141,17 +151,64 @@ class ProcessingPipeline(Construct):
             f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
         ).grant_read_write(self.shared_lambda_role)
 
+        # The thumbnail generation and enrichment model steps can share a SageMaker integration
+        # Lambda function:
+        self.shared_sagemaker_lambda = SageMakerCallerFunction(
+            self,
+            "CallSageMaker",
+            support_async_endpoints=True,
+            role=self.shared_lambda_role,
+            description="Lambda function to invoke SSM-parameterized SageMaker endpoints from SFn",
+        )
+
         self.ocr_step = TextractOcrStep(
             self,
             "OCRStep",
             lambda_role=self.shared_lambda_role,
+            output_bucket=self.textract_results_bucket,
+            output_prefix="textract",
         )
+        if use_thumbnails:
+            self.thumbnails_step = GenerateThumbnailsStep(
+                self,
+                "ThumbnailStep",
+                lambda_role=self.shared_lambda_role,
+                ssm_param_prefix=ssm_param_prefix,
+                shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
+            )
+            ocr_preproc_states = [self.ocr_step.sfn_task, self.thumbnails_step.sfn_task]
+        else:
+            self.thumbnails_step = None
+            ocr_preproc_states = [self.ocr_step.sfn_task]
+
+        # You could optimize out this Parallel if you're always going to run only the Textract
+        # step at this point, but it helps for an agnostic solution because it can be tricky to
+        # simultaneously select a subset of the state output and map it to a subkey of the state
+        # inside TextractOcrStep.
+        ocr_preproc = sfn.Parallel(
+            self,
+            "OCRAndPreProcessing",
+            comment="Run OCR and (if set up) generate resized page thumbnail images in parallel",
+            result_path="$.OCRPreproc",
+        ).branch(*ocr_preproc_states)
+
         self.enrichment_step = SageMakerEnrichmentStep(
             self,
             "EnrichmentStep",
             lambda_role=self.shared_lambda_role,
             output_bucket=self.enriched_results_bucket,
             ssm_param_prefix=ssm_param_prefix,
+            shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
+            textracted_input_jsonpath={
+                "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[0].Bucket"),
+                "Key": sfn.JsonPath.string_at("$.OCRPreproc[0].Key"),
+            },
+            thumbnail_input_jsonpath={
+                "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[1].Bucket"),
+                "Key": sfn.JsonPath.string_at("$.OCRPreproc[1].Key"),
+            }
+            if use_thumbnails
+            else None,
         )
         self.postprocessing_step = LambdaPostprocStep(
             self,
@@ -175,7 +232,7 @@ class ProcessingPipeline(Construct):
         )
 
         definition = (
-            self.ocr_step.sfn_task.next(self.enrichment_step.sfn_task)
+            ocr_preproc.next(self.enrichment_step.sfn_task)
             .next(self.postprocessing_step.sfn_task)
             .next(
                 sfn.Choice(self, "CheckConfidence")
@@ -226,8 +283,6 @@ class ProcessingPipeline(Construct):
             entry=S3_TRIGGER_LAMBDA_PATH,
             environment={
                 "STATE_MACHINE_ARN": self.state_machine.state_machine_arn,
-                "TEXTRACT_S3_BUCKET_NAME": self.textract_results_bucket.bucket_name,
-                "TEXTRACT_S3_PREFIX": "textract",
             },
             index="main.py",
             handler="handler",
@@ -253,15 +308,31 @@ class ProcessingPipeline(Construct):
         return self.ocr_step.textract_state_machine
 
     @property
-    def sagemaker_model_param(self) -> ssm.StringParameter:
+    def sagemaker_endpoint_param(self) -> ssm.StringParameter:
         """SSM parameter linking the pipeline to a SageMaker enrichment model (endpoint name)"""
-        return self.enrichment_step.model_param
+        return self.enrichment_step.endpoint_param
+
+    @property
+    def thumbnail_endpoint_param(self) -> Optional[ssm.StringParameter]:
+        """SSM parameter linking the pipeline to a thumbnail generator endpoint (on SageMaker)
+
+        This will be `None` if the construct was created with `use_thumbnails=False`
+        """
+        return None if self.thumbnails_step is None else self.thumbnails_step.endpoint_param
 
     @property
     def sagemaker_sns_topic(self) -> Optional[sns.Topic]:
-        """SNS topic that async SageMaker endpoints should use for callback, or None if not enabled
-        """
-        return self.enrichment_step.async_notify_topic
+        """SNS topic that async SageMaker endpoints should use for callback, or None if not enabled"""
+        return self.enrichment_step.sfn_task.async_notify_topic
+
+    @property
+    def thumbnail_sns_topic(self) -> Optional[sns.Topic]:
+        """SNS topic that async SageMaker endpoints should use for callback, or None if not enabled"""
+        return (
+            None
+            if self.thumbnails_step is None
+            else self.thumbnails_step.sfn_task.async_notify_topic
+        )
 
     @property
     def entity_config_param(self) -> ssm.StringParameter:
@@ -290,9 +361,14 @@ class ProcessingPipeline(Construct):
         return [
             SsmParameterReadStatement(
                 resources=[
-                    self.sagemaker_model_param,
-                    self.entity_config_param,
-                    self.review_workflow_param,
+                    param
+                    for param in (
+                        self.sagemaker_endpoint_param,
+                        self.thumbnail_endpoint_param,
+                        self.entity_config_param,
+                        self.review_workflow_param,
+                    )
+                    if param is not None
                 ],
                 sid=None if sid_prefix is None else (sid_prefix + "ReadPipelineConfigParams"),
             )
@@ -310,9 +386,14 @@ class ProcessingPipeline(Construct):
         return [
             SsmParameterWriteStatement(
                 resources=[
-                    self.sagemaker_model_param,
-                    self.entity_config_param,
-                    self.review_workflow_param,
+                    param
+                    for param in (
+                        self.sagemaker_endpoint_param,
+                        self.thumbnail_endpoint_param,
+                        self.entity_config_param,
+                        self.review_workflow_param,
+                    )
+                    if param is not None
                 ],
                 sid=None if sid_prefix is None else (sid_prefix + "WritePipelineConfigParams"),
             ),
@@ -332,11 +413,11 @@ class ProcessingPipeline(Construct):
         """
         return self.config_read_statements(sid_prefix) + self.config_write_statements(sid_prefix)
 
-    def enrichment_model_statements(
+    def sagemaker_model_statements(
         self,
         sid_prefix: Union[str, None] = "",
     ) -> List[PolicyStatement]:
-        """Create PolicyStatements to grant required bucket permissions to NLP enrichment model
+        """Create PolicyStatements to grant required bucket permissions to SageMaker models
 
         Your SageMaker model/endpoint's execution role will need these permissions to be able to
         access the pipeline's intermediate buckets for Textract results and enriched results.
@@ -347,7 +428,7 @@ class ProcessingPipeline(Construct):
             Prefix to add to generated statement IDs for uniqueness, or "", or None to suppress
             SIDs.
         """
-        return [
+        statements = [
             S3Statement(
                 grant_write=False,
                 resources=[self.textract_results_bucket],
@@ -358,4 +439,12 @@ class ProcessingPipeline(Construct):
                 resources=[self.enriched_results_bucket],
                 sid=None if sid_prefix is None else (sid_prefix + "ReadWriteEnrichedBucket"),
             ),
-        ] + self.enrichment_step.sagemaker_sns_statements()
+            *self.enrichment_step.sagemaker_sns_statements(
+                sid_prefix=None if sid_prefix is None else (sid_prefix + "Enrich"),
+            ),
+        ]
+        if self.thumbnails_step is not None:
+            statements += self.thumbnails_step.sagemaker_sns_statements(
+                sid_prefix=None if sid_prefix is None else (sid_prefix + "Thumbs"),
+            )
+        return statements

@@ -181,10 +181,10 @@ class LambdaPostprocStep(Construct):
             },
             index="main.py",
             handler="handler",
-            memory_size=256,
+            memory_size=1024,
             role=lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=Duration.seconds(60),
+            timeout=Duration.seconds(120),
         )
 
         self.sfn_task = sfn_tasks.LambdaInvoke(

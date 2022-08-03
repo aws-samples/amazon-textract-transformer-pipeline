@@ -82,15 +82,24 @@ If your dataset is particularly tiny (more like e.g. 30 labelled pages than 100)
 
 ## Customizing the pipeline
 
-### Handling large documents
+### Skipping page image generation (optimizing for LayoutLMv1)
+
+By default, the deployed pipeline will invoke a page thumbnail image generation endpoint in parallel to running input documents through Amazon Textract. These are useful additional inputs for some model architectures supported by the pipeline (e.g. LayoutLMv2, LayoutXLM), but are not required or used by LayoutLMv1.
+
+If you know you'll be using the pipeline with LayoutLMv1 models only, you can edit [cdk_app.py](cdk_app.py) to set `use_thumbnails=False` before deploying to remove the parallel thumbnailing step from the pipeline. When the pipeline is deployed with the default `use_thumbnails=True`, it will fail unless a thumbnailing endpoint is properly configured (via SSM as shown in [notebook 2](notebooks/2.%20Model%20Training.ipynb)).
+
+
+### Handling large documents (or optimizing for small ones)
 
 Because some components of the pipeline have configured timeouts or process consolidated document Textract JSON in memory, scaling to very large documents (e.g. hundreds of pages) may require some configuration changes in the CDK solution.
 
 Consider:
 
 - Increasing the `timeout_excluding_queue` (in [pipeline/ocr/__init__.py TextractOcrStep](pipeline/ocr/__init__.py)) to accommodate the longer Textract processing and Lambda consolidation time (e.g. to 20mins+)
-- Increasing the `timeout` and `memory_size` of the `CallTextract` Lambda function in [pipeline/ocr/__init__.py](pipeline/ocr/__init__.py) to accommodate consolidating the large Textract result JSON to a single S3 file (e.g. to 300sec, 1024MB)
-- Likewise increasing the `memory_size` of the `PostProcessFn` Lambda function in [pipeline/postprocessing/__init__.py](pipeline/postprocessing/__init__.py), which also loads and processes full document JSON (e.g. to 1024MB)
+- Increasing the `timeout` and `memory_size` of the `CallTextract` Lambda function in [pipeline/ocr/__init__.py](pipeline/ocr/__init__.py) to accommodate consolidating the large Textract result JSON to a single S3 file (e.g. to 8min, 2048MB)
+- Likewise increasing the `memory_size` of the `PostProcessFn` Lambda function in [pipeline/postprocessing/__init__.py](pipeline/postprocessing/__init__.py), which also loads and processes full document JSON (e.g. to 1024MB or more)
+
+Conversely if you know up-front your use case will handle only images or short documents, you may be able to reduce these settings from the defaults to save costs.
 
 
 ### Using Amazon Textract `TABLES` and `FORMS` features in the pipeline
@@ -130,7 +139,7 @@ Because much more un-labelled domain data (Textracted documents) is usually avai
 
 For this reason, it's typically best to **first experiment with fine-tuning the public base models** - before exploring what improvements might be achievable with domain-specific pre-training. It's also useful to understand the relative value of the effort of collecting more labelled data (see *How much data do I need?*) to compare against dedicating resources to pre-training.
 
-Unless your domain diverges strongly from the data the public model was trained on (for example trying to transfer to a new language or an area heavy with unusual grammar/jargon), accuracy improvements from continuation pre-training are likely to be small and incremental rather than revolutionary. To consider from-scratch pre-training (without a public model base), you'll typically need a particularly large and diverse corpus (as per training BERT from scratch) to get good results.
+Unless your domain diverges strongly from the data the public model was trained on (for example trying to transfer to a new language or an area heavy with unusual grammar/jargon), accuracy improvements from continuation pre-training are likely to be small and incremental rather than revolutionary. To consider from-scratch pre-training (without a public model base), you'll typically need a large and diverse corpus (as per training BERT from scratch) to get good results.
 
 > ⚠️ **Note:** Some extra code modifications may be required to pre-train from scratch (for example to initialize a new tokenizer from the source data).
 
@@ -138,3 +147,31 @@ There may be other factors aside from accuracy that influence your decision to p
 
 - **Bias** - Large language models have been shown to learn not just grammar and semantics from datasets, but other patterns too: Meaning practitioners must consider the potential biases in source datasets, and what real-world harms this could cause if the model brings learned stereotypes to the target use case. For example see [*"StereoSet: Measuring stereotypical bias in pretrained language models", (2020)*](https://arxiv.org/abs/2004.09456)
 - **Privacy** - In some specific circumstances (for example [*"Extracting Training Data from Large Language Models", 2020*](https://arxiv.org/abs/2012.07805)) it has been shown that input data can be reverse-engineered from trained large language models. Protections against this may be required, depending how your model is exposed to users.
+
+
+### Scaling and optimizing model training
+
+While fine-tuning is often practical on a single-GPU instance like `ml.g4dn.xlarge` or `ml.p3.2xlarge`, you'll probably be interested in scaling up for the larger datasets involved in pre-training. Here are some tips to be aware of:
+
+1. The default **multi-GPU** behavior of Hugging Face (v4.17) `Trainer` on SageMaker is normally [DataParallel (DP)](https://pytorch.org/docs/stable/generated/torch.nn.DataParallel.html) in standard "script mode", but (AWS' optimized implementation of) [DistributedDataParallel (DDP)](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html) will be launched when using [SageMaker Distributed Data Parallel](https://docs.aws.amazon.com/sagemaker/latest/dg/data-parallel.html) on a supported instance type (such as `ml.p3.16xlarge` or larger)
+    - The underlying implementation of LayoutLMv2 (and by extension, LayoutXLM which is based on the same architecture), [does not support](https://github.com/huggingface/transformers/issues/14110#issuecomment-949419662) DP mode. Therefore to train LayoutXLM/v2 on a multi-GPU instance you must **either**:
+        - Use SageMaker DDP by selecting a supported instance type (e.g. `ml.p3.16xlarge`) and setting `distribution={ "smdistributed": { "dataparallel": { "enabled": True } } },`, **OR**
+        - Use the `ddp_launcher.py` script as entrypoint instead of `train.py`, to launch native PyTorch DDP.
+      to enable SageMaker DDP, should.
+    - ⚠️ **Warning:** At some points in development, a bug was observed where multi-worker data pre-processing would hang with SageMaker DDP. One workaround is to set `dataproc_num_workers` to `1`, but if your dataset is large it will probably take longer to load in single-worker than the 30 minute default AllReduce time-out. This issue *may* still be present, so please raise it if you come across it.
+    - LayoutLMv1 can train in either mode, but DP adds additional GPU memory overhead to the "lead" GPU, so you may be able to run larger batch sizes before encountering `CUDAOutOfMemory` if using DDP: Either by using the native PyTorch `ddp_launcher.py` or SageMaker `smdistributed`.
+1. Remember that `per_device_train_batch_size` controls **per-accelerator batching**
+    - Moving up to a multi-GPU instance type implicitly increases the overall batch size for learning
+    - Smaller models like LayoutLMv1 may be able to tolerate larger per-device batch sizes than LayoutLMv2/XLM before running out of GPU memory: For example train/eval settings of `4/8` may be appropriate for LLMv1 as opposed to `2/4` for v2/XLM.
+1. On job start-up, input manifests and Textract JSONs are **pre-processed** into a training-ready dataset. This is managed by the "lead" process with `dataproc_num_workers`, and the processes mapping to other GPUs wait until it's complete to load the data from cache files. Consequences of this include:
+    - `dataproc_num_workers` can be configured to consume (almost) as many CPU cores as the machine has available, regardless of how many GPU devices are present in DDP mode, and will be highly parallel by default.
+    - If data processing doesn't complete within [the default DDP timeout](https://discuss.pytorch.org/t/how-to-set-longer-timeout-for-ddp-training/143213) (usually 30min), the other GPU manager processes will stop waiting and the job will fail. This should only be a problem if your dataset is extremely large, or you're trying to train with a very restricted `dataproc_num_workers` (or instance CPU count) as compared to the dataset size.
+    - In principle you could consider refactoring to use a separate SageMaker Processing job for this initial setup, and save the resultant `datasets` cache files to S3 to use as training job inputs. A [SageMaker Pipeline](https://docs.aws.amazon.com/sagemaker/latest/dg/pipelines-sdk.html) could be used to orchestrate these two jobs together and even cache processing results between training runs. We chose not to do this initially, to keep the end-to-end flow simpler and the training job inputs more intuitive.
+1. Multiprocessing (especially combining multiple types of multiprocessing) can sometimes cause **deadlocks and swallowed error logs**
+    - Setting a sensible [`max_run` timeout](https://sagemaker.readthedocs.io/en/stable/api/training/estimators.html#sagemaker.estimator.EstimatorBase) can help minimize wasted resources even if a deadlock prevents your job from properly stopping after an unhandled error.
+    - Perform initial testing on a smaller subset of target data, perhaps disabling some parallelism controls (like setting hyperparameters `"dataproc_num_workers": 0,` and `"dataloader_num_workers": 0,`) at first to better surface the cause of any error messages. Checking functionality on a single-GPU training run before scaling to DDP training may also help.
+    - Other things that may help surface diagnostic messages include setting environment variable `PYTHONUNBUFFERED=1` and substituting `logger` calls for `print()` - to help ensure messages get published before a crashing thread exits.
+1. If your document filepaths *don't contain special characters*, then you may be able to improve job start-up performance using **[Fast File Mode](https://aws.amazon.com/about-aws/whats-new/2021/10/amazon-sagemaker-fast-file-mode/)** by setting `input_mode="FastFile"` on the Estimator (or configuring per-channel in `fit()`). The Credit Card Agreements example document filenames *do* though, and this has been observed to cause errors with FastFile mode in testing - so is not turned on below by default.
+1. If you're interested to explore **[SageMaker Training Compiler](https://docs.aws.amazon.com/sagemaker/latest/dg/training-compiler.html)** to further optimize training of these models:
+    - Check out the additional guidance in [src/smtc_launcher.py](notebooks/src/smtc_launcher.py)
+    - ...But be aware in our initial tests we found errors getting the compiler to work with LayoutLMv2+, and although it functionally worked with LayoutLMv1 a re-compilation was being triggered each epoch - which offset performance gains since epochs themselves were fairly short.

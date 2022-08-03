@@ -15,7 +15,9 @@ Additionally, you can request with:
   with key 'URI' OR ('Bucket' and 'Key') to instead have the model fetch the input JSON from S3.
   This is useful if you need to process JSONs bigger than the payload size limit (5MB by default).
 - req.S3Output : Like S3Input, store the result to S3 and return a dict of { URI, Bucket, Key }
-  instead of the full result inline.
+  instead of the full result inline. **However**: If the model detects it's running in a SageMaker
+  asynchronous inference endpoint, this will be ignored because the inline response will get
+  uploaded to S3 anyway - you don't want to open an S3 object just to point to another one, right?
 - req.TargetPageNum : Set to a (1-based) integer if you only need to annotate a particular page of
   the input document.
 - req.TargetPageOnly : Set true to output *only* the `TargetPageNum` if set - i.e. remove all other
@@ -27,6 +29,7 @@ Additionally, you can request with:
 
 # Python Built-Ins:
 from collections import defaultdict
+from inspect import signature
 import io
 import json
 from operator import itemgetter
@@ -35,21 +38,24 @@ from typing import Optional
 
 # External Dependencies:
 import boto3
+import datasets
 import numpy as np
+import PIL
 
 # Sadly (at transformers v4.6), LayoutLMTokenizer doesn't seem to work with AutoTokenizer as it
 # expects config.json, not tokenizer_config.json:
-from transformers import AutoConfig, LayoutLMTokenizerFast, AutoModelForTokenClassification
+import transformers
+from transformers import AutoConfig, AutoProcessor, AutoTokenizer, AutoModelForTokenClassification
+from transformers.file_utils import EntryNotFoundError
 import torch
 import trp
 
 # Local Dependencies:
-from .data.base import NaiveExampleSplitter
 from .data.geometry import layoutlm_boxes_from_trp_blocks
 from .data.ner import (
     TextractLayoutLMDataCollatorForWordClassification,
-    TextractLayoutLMExampleForWordClassification,
 )
+from .data.splitting import map_split_long_samples
 from . import logging_utils
 
 logger = logging_utils.getLogger("infcustom")
@@ -58,7 +64,16 @@ logger.info("Loading custom inference handlers")
 # following on the Model to force flushing log calls through: env={ "PYTHONUNBUFFERED": "1" }
 
 
+# Configurations:
 INFERENCE_BATCH_SIZE = int(os.environ.get("INFERENCE_BATCH_SIZE", "8"))
+PAD_TO_MULTIPLE_OF = os.environ.get("PAD_TO_MULTIPLE_OF", "8")
+PAD_TO_MULTIPLE_OF = None if PAD_TO_MULTIPLE_OF in ("None", "") else int(PAD_TO_MULTIPLE_OF)
+DEFAULT_THUMBNAIL_SIZE = os.environ.get("DEFAULT_THUMBNAIL_SIZE", "224,224")
+DEFAULT_THUMBNAIL_SIZE = tuple(int(x) for x in DEFAULT_THUMBNAIL_SIZE.split(","))
+DEFAULT_THUMBNAIL_COLOR = os.environ.get("DEFAULT_THUMBNAIL_COLOR", "128,128,128")
+DEFAULT_THUMBNAIL_COLOR = tuple(int(x) for x in DEFAULT_THUMBNAIL_COLOR.split(","))
+
+
 s3client = boto3.client("s3")
 
 
@@ -115,6 +130,32 @@ def extract_textract_page(doc_json: dict, page_num: int, trp_doc: Optional[trp.D
     return {"doc_json": result_json, "trp_doc": trp.Document(result_json)}
 
 
+def is_async_endpoint() -> Optional[bool]:
+    """Check whether this script is running in an asynchronous SageMaker inference endpoint
+
+    Unfortunately, I've not found any local (environment variable, config file) signals for this
+    yet - so this function calls the DescribeEndpoint API to check. If the status can't be
+    determined (e.g. not running in a SageMaker endpoint, or can't access the API), returns None.
+    """
+    ENDPOINT_METADATA_FILEPATH = "/opt/ml/.sagemaker_infra/endpoint-metadata.json"
+    try:
+        with open(ENDPOINT_METADATA_FILEPATH, "r") as f:
+            endpoint_meta = json.loads(f.read())
+    except FileNotFoundError:
+        logger.warning(
+            "SageMaker endpoint metadata file not found - treating this deployment as non-async"
+        )
+        return False
+    try:
+        endpoint_name = endpoint_meta["EndpointArn"].split("/")[1]
+        endpoint_desc = boto3.client("sagemaker").describe_endpoint(EndpointName=endpoint_name)
+        return "AsyncInferenceConfig" in endpoint_desc
+    except:
+        logger.exception(
+            "Couldn't look up endpoint metadata - treating this deployment as non-async"
+        )
+
+
 def input_fn(input_bytes, content_type: str):
     """Deserialize and pre-process model request JSON
 
@@ -148,6 +189,19 @@ def input_fn(input_bytes, content_type: str):
             doc_json = req_json
             req_root_is_doc = True
 
+    thumbnails = req_json.get("S3Thumbnails")
+    if thumbnails:
+        try:
+            thumbnails = S3ObjectSpec(thumbnails)
+        except ValueError as e:
+            raise ValueError(
+                "Invalid Request.S3Thumbnails: If provided, must be an object with 'S3Uri' or "
+                "'Bucket' and 'Key'"
+            ) from e
+        if req_root_is_doc:
+            del doc_json["S3Thumbnails"]
+        # Don't fetch just yet - we can save memory if waiting until any page filtering is done
+
     s3_output = req_json.get("S3Output")
     if s3_output:
         try:
@@ -170,11 +224,61 @@ def input_fn(input_bytes, content_type: str):
         if req_root_is_doc:
             del doc_json["TargetPageOnly"]
 
+    trp_doc = trp.Document(doc_json)
+    # Save memory by extracting individual page, if that's acceptable per the request:
+    if target_page_only and page_num is not None:
+        doc_json, trp_doc = itemgetter("doc_json", "trp_doc")(
+            extract_textract_page(doc_json, page_num, trp_doc)
+        )
+
+    # Now load thumbnails if present and filter by page if appropriate:
+    if thumbnails:
+        # Fetch streaming body is not seekable, so need to buffer into a BytesIO:
+        with io.BytesIO(
+            s3client.get_object(Bucket=thumbnails.bucket, Key=thumbnails.key)["Body"].read()
+        ) as bio:
+            thumbnails = np.load(bio)
+            if isinstance(thumbnails, np.lib.npyio.NpzFile):
+                if "images" in thumbnails:
+                    thumbnails = thumbnails["images"]
+                elif "image" in thumbnails:
+                    thumbnails = np.expand_dims(thumbnails["image"], axis=0)
+                else:
+                    raise ValueError(
+                        "Page thumbnails archive for request did not contain either 'images' or "
+                        f"'image' variables. Got: {[k for k in thumbnails]}"
+                    )
+                if page_num is None:
+                    if thumbnails.dtype.kind == "S":
+                        # Ensure we close() our BytesIOs without breaking PIL.Images:
+                        thmbs = []
+                        for b in thumbnails:
+                            with io.BytesIO(b) as imgio:
+                                thmbs.append(PIL.Image.open(imgio).copy())
+                        thumbnails = thmbs
+                    elif thumbnails.ndim != 4:
+                        logger.warning(
+                            "Thumbnails expected either array of PNG bytestrings or 4D images array. "
+                            f"Got shape {thumbnails.shape}"
+                        )
+                else:
+                    if thumbnails.dtype.kind == "S":
+                        # Again closing the BytesIOs without breaking PIL.Image:
+                        with io.BytesIO(thumbnails[page_num - 1]) as imgio:
+                            thumbnails = [PIL.Image.open(imgio).copy()]
+                    elif thumbnails.ndim != 4:
+                        logger.warning(
+                            "Thumbnails expected either array of PNG bytestrings or 4D images array. "
+                            f"Got shape {thumbnails.shape}"
+                        )
+                    else:
+                        thumbnails = thumbnails[page_num - 1]
+
     return {
         "doc_json": doc_json,
-        "page_num": page_num,
+        "images": thumbnails,
         "s3_output": s3_output,
-        "target_page_only": target_page_only,
+        "trp_doc": trp_doc,
     }
 
 
@@ -223,21 +327,35 @@ def model_fn(model_dir):
         Indicating which device the model was loaded to
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tokenizer = LayoutLMTokenizerFast.from_pretrained(model_dir)
+    config = AutoConfig.from_pretrained(model_dir)
+    try:
+        processor = AutoProcessor.from_pretrained(model_dir, apply_ocr=False, do_resize=False)
+    except (EntryNotFoundError, OSError):
+        processor = None
+    except ValueError as ve:
+        if "unrecognized processor" in str(ve).lower():
+            processor = None
+        else:
+            raise ve
+
+    tokenizer = processor.tokenizer if processor else AutoTokenizer.from_pretrained(model_dir)
     collator = TextractLayoutLMDataCollatorForWordClassification(
         tokenizer,
-        pad_to_multiple_of=8,
+        processor=processor,
+        pad_to_multiple_of=PAD_TO_MULTIPLE_OF,
     )
+
     model = AutoModelForTokenClassification.from_pretrained(model_dir)
     model.eval()
     model.to(device)
-    config = AutoConfig.from_pretrained(model_dir)
     logger.info(f"Model loaded")
     return {
         "collator": collator,
         "config": config,
         "device": device,
+        "is_async_endpoint": is_async_endpoint(),
         "model": model,
+        "processor": processor,
         "tokenizer": tokenizer,
     }
 
@@ -262,20 +380,21 @@ def predict_fn(input_data: dict, model: dict):
     s3_output : S3ObjectSpec
         Passed through from input_data
     """
-    collator, config, device, trained_model, tokenizer = itemgetter(
-        "collator", "config", "device", "model", "tokenizer"
+    collator, config, device, is_async_endpoint, trained_model, processor, tokenizer = itemgetter(
+        "collator", "config", "device", "is_async_endpoint", "model", "processor", "tokenizer"
     )(model)
-    doc_json, page_num, s3_output, target_page_only = itemgetter(
-        "doc_json", "page_num", "s3_output", "target_page_only"
-    )(input_data)
-    trp_doc = trp.Document(doc_json)
+    doc_json, images, s3_output, trp_doc = itemgetter("doc_json", "images", "s3_output", "trp_doc")(
+        input_data
+    )
+    # Track any warnings to be reported in the output response:
+    warns = []
 
-    # Save memory by extracting individual page, if that's acceptable per the request:
-    if target_page_only and page_num is not None:
-        doc_json, trp_doc = itemgetter("doc_json", "trp_doc")(
-            extract_textract_page(doc_json, page_num, trp_doc)
-        )
-        page_num = 1
+    # Note that some models (e.g. LayoutLMv2) have unusual max_position_embeddings (e.g. 514 rather
+    # than 512) - so if using padding we need to be mindful to keep consistent.
+    if PAD_TO_MULTIPLE_OF:
+        max_seq_len = PAD_TO_MULTIPLE_OF * (config.max_position_embeddings // PAD_TO_MULTIPLE_OF)
+    else:
+        max_seq_len = config.max_position_embeddings
 
     # We can't use pipeline/TextClassificationPipeline, because LayoutLMForTokenClassification has
     # been implemented such that the bbox input is separate and *optional*, and doesn't come from
@@ -290,36 +409,51 @@ def predict_fn(input_data: dict, model: dict):
     #     framework="pt",
     # )
     with torch.no_grad():
-        # Split the page(s) into sequences of acceptable length for inference:
-        examples = []
-        example_word_block_ids = []
-        for page in trp_doc.pages:
-            page_words = [word for line in page.lines for word in line.words]
-            page_word_texts = [word.text for word in page_words]
-            page_word_boxes = layoutlm_boxes_from_trp_blocks(page_words)
-            splits = NaiveExampleSplitter.split(
-                [word.text for word in page_words],
-                tokenizer,
-                max_content_seq_len=config.max_position_embeddings - 2,
-            )
-            for startword, endword in splits:
-                examples.append(
-                    TextractLayoutLMExampleForWordClassification(
-                        word_boxes_normalized=page_word_boxes[startword:endword],
-                        word_texts=page_word_texts[startword:endword],
-                    )
-                )
-                example_word_block_ids.append([word.id for word in page_words[startword:endword]])
+        words_by_page = [
+            [word for line in page.lines for word in line.words] for page in trp_doc.pages
+        ]
+        boxes_by_page = [
+            layoutlm_boxes_from_trp_blocks(pgw, return_tensors="np") for pgw in words_by_page
+        ]
+        word_block_ids_by_page = [[word.id for word in pgw] for pgw in words_by_page]
+        words_by_page = [[word.text for word in pgw] for pgw in words_by_page]
 
-        # Iterate batches:
+        tokenizer_params = set(signature(tokenizer).parameters)
+        collate_fn = lambda batch: collator(batch)
+
+        if processor and (images is None):
+            warns.append(
+                f"SageMaker model's preprocessor ({type(processor)}) expects page images (as "
+                ".S3Thumbnails.{Bucket, Key} numpy array pointer in the request) but none were "
+                "given. Generating default blank images - accuracy may be degraded."
+            )
+            logger.warning(warns[-1])
+            images = [PIL.Image.new("RGB", DEFAULT_THUMBNAIL_SIZE, DEFAULT_THUMBNAIL_COLOR)] * len(
+                words_by_page
+            )
+
+        ds = datasets.Dataset.from_dict(
+            map_split_long_samples(
+                {
+                    "text": words_by_page,
+                    "block-ids": word_block_ids_by_page,
+                    "boxes": boxes_by_page,
+                    **({"images": images} if processor and (images is not None) else {}),
+                },
+                tokenizer=tokenizer,
+                max_seq_len=max_seq_len - 2,  # (Leave room for CLS and SEP)
+                tokenizer_params=tokenizer_params,
+            )
+        )
+
         block_results_map = defaultdict(list)
-        for ixbatch, _ in enumerate(examples[::INFERENCE_BATCH_SIZE]):
-            ixbatchstart = ixbatch * INFERENCE_BATCH_SIZE
-            batch_examples = examples[ixbatchstart : (ixbatchstart + INFERENCE_BATCH_SIZE)]
-            batch = collator(batch_examples)
-            for name in batch:  # Collect batch tensors to same GPU/target device:
-                batch[name] = batch[name].to(device)
-            output = trained_model.forward(**batch)
+
+        def infer_batch(batch):
+            n_samples = len(batch["text"])
+            collated = collate_fn(batch)
+            for name in collated:  # Collect batch tensors to same GPU/target device:
+                collated[name] = collated[name].to(device)
+            output = trained_model.forward(**collated)
             # output.logits is (batch_size, seq_len, n_labels)
 
             # Convert logits to probabilities and retrieve to numpy:
@@ -328,14 +462,22 @@ def predict_fn(input_data: dict, model: dict):
             probs = probs_cpu.numpy()
 
             # Map (sub-word, token-level) predictions per Textract BLOCK:
-            for ixoffset, _ in enumerate(batch_examples):
-                word_block_ids = example_word_block_ids[ixbatchstart + ixoffset]
-                word_ids = batch.word_ids(ixoffset)
+            for ixex, _ in enumerate(batch["text"]):
+                word_block_ids = batch["block-ids"][ixex]
+                word_ids = collated.word_ids(ixex)
                 for ixtoken, ixword in enumerate(word_ids):
                     if ixword is not None:
-                        block_results_map[word_block_ids[ixword]].append(
-                            probs[ixoffset, ixtoken, :]
-                        )
+                        block_results_map[word_block_ids[ixword]].append(probs[ixex, ixtoken, :])
+
+            # We're using datasets as a batching mechanism here - return doesn't matter
+            return {"Done": [True] * n_samples}
+
+        ds.map(
+            infer_batch,
+            batched=True,
+            batch_size=INFERENCE_BATCH_SIZE,
+            desc="Running inference",
+        )
 
         # Aggregate per-block results and save to Textract JSON:
         for block_id in block_results_map:
@@ -349,4 +491,10 @@ def predict_fn(input_data: dict, model: dict):
             block["PredictedClass"] = int(np.argmax(block_probs))
             block["PredictedClassConfidence"] = float(block_probs[block["PredictedClass"]])
 
-    return {"doc_json": doc_json, "s3_output": s3_output}
+    if len(warns):
+        if "Warnings" in doc_json:
+            doc_json["Warnings"] = [*doc_json["Warnings"], *warns]
+        else:
+            doc_json["Warnings"] = warns
+
+    return {"doc_json": doc_json, "s3_output": None if is_async_endpoint else s3_output}

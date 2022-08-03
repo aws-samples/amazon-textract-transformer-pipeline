@@ -21,8 +21,6 @@ sfn = boto3.client("stepfunctions")
 
 STATE_MACHINE_ARN = os.environ.get("STATE_MACHINE_ARN")
 S3_EVENT_STRUCTURE_MAJOR = 2
-TEXTRACT_S3_BUCKET_NAME = os.environ.get("TEXTRACT_S3_BUCKET_NAME")
-TEXTRACT_S3_PREFIX = os.environ.get("TEXTRACT_S3_PREFIX")
 
 
 class MalformedRequest(ValueError):
@@ -107,12 +105,6 @@ def handler(event: dict, context):
                 "Key": record.key,
             },
         }
-        if TEXTRACT_S3_BUCKET_NAME or TEXTRACT_S3_PREFIX:
-            sfn_input["Textract"] = {}
-        if TEXTRACT_S3_BUCKET_NAME:
-            sfn_input["Textract"]["Bucket"] = TEXTRACT_S3_BUCKET_NAME
-        if TEXTRACT_S3_PREFIX:
-            sfn_input["Textract"]["Prefix"] = TEXTRACT_S3_PREFIX
 
         sfn.start_execution(
             stateMachineArn=STATE_MACHINE_ARN,
