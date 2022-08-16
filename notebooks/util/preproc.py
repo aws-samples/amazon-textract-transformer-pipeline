@@ -417,6 +417,16 @@ def call_textract(
             t_next_startable = datetime.now().timestamp()
             t_start_checking_results = t_next_startable + 16  # Min expected process latency secs
 
+            def increment_pstart():
+                """Increment job start progress *and* close the progress bar if completed
+
+                We want to close pstart as soon as all jobs are started, in order to display the
+                correct (shorter) total runtime rather than waiting until jobs are also finished.
+                """
+                pstart.update(1)
+                if pstart.n >= pstart.total:
+                    pstart.close()
+
             # Main event loop:
             while len(enumd_queue_items) or len(sfn_submissions):
                 # INPUT STEP: Try to process one queued item:
@@ -437,7 +447,7 @@ def call_textract(
                         if isinstance(req_or_existing, str):
                             pbar.write(f"Skipping already-textracted '{doc_s3uri}'")
                             results[ix][manifest_out_field] = req_or_existing
-                            pstart.update(1)
+                            increment_pstart()
                             pbar.update(1)
                             continue
 
@@ -446,7 +456,7 @@ def call_textract(
                     except Exception as err:
                         pbar.write(f"Exception preparing Textract parameters for: {item}")
                         results[ix][manifest_out_field] = err
-                        pstart.update(1)
+                        increment_pstart()
                         pbar.update(1)
                         continue
 
@@ -471,7 +481,7 @@ def call_textract(
                         pbar.write(f"Exception creating Textract job for: {doc_s3uri}")
                         results[ix][manifest_out_field] = err
                         pbar.update(1)
-                    pstart.update(1)
+                    increment_pstart()
 
                 # OUTPUT STEP: Try to query (some or all, depending on phase) results
                 input_items_queued = len(enumd_queue_items) > 0
