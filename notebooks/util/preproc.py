@@ -96,7 +96,7 @@ def list_preannotated_textract_uris(
             manifest_file = os.path.join(job_path, "manifests", "output", "output.manifest")
             if not os.path.isfile(manifest_file):
                 logger.warning("Skipping job %s: No output manifest at %s", job_path, manifest_file)
-            continue
+                continue
 
         try:
             with open(manifest_file) as f:
