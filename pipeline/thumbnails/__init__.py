@@ -50,7 +50,6 @@ class GenerateThumbnailsStep(Construct):
             parameter_name=f"{ssm_param_prefix}ThumbnailEndpointName",
             simple_name=False,
             string_value="undefined",
-            type=ssm.ParameterType.STRING,
         )
         lambda_role.add_to_policy(
             PolicyStatement(

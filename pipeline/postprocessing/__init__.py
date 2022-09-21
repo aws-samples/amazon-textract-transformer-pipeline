@@ -161,7 +161,6 @@ class LambdaPostprocStep(Construct):
             parameter_name=f"{ssm_param_prefix}EntityConfiguration",
             simple_name=False,
             string_value=json.dumps(DEFAULT_ENTITY_CONFIG, indent=2),
-            type=ssm.ParameterType.STRING,
         )
         lambda_role.add_to_policy(
             PolicyStatement(

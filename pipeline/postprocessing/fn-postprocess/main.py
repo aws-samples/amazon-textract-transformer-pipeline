@@ -159,14 +159,11 @@ def handler(event, context):
             )
             if len(field_result["Values"]):
                 # For multi value, take field confidence = average value confidence
-                field_result["Confidence"] = (
-                    reduce(
-                        lambda acc, next: acc + next["Confidence"],
-                        field_result["Values"],
-                        0.0,
-                    )
-                    / len(field_result["Values"])
-                )
+                field_result["Confidence"] = reduce(
+                    lambda acc, next: acc + next["Confidence"],
+                    field_result["Values"],
+                    0.0,
+                ) / len(field_result["Values"])
 
     return {
         "Confidence": min(
