@@ -21,7 +21,7 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore"
   },
   "dependencies": {
-    "amazon-textract-response-parser": "0.1.2",
+    "amazon-textract-response-parser": "0.2.0",
     "element-internals-polyfill": "1.1.2",
     "pdfjs-dist": "2.13.216",
     "vue": "^3.2.29"
