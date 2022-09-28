@@ -11,7 +11,7 @@ endpoint.
 from typing import List, Optional, Union
 
 # External Dependencies:
-from aws_cdk import Duration, Token
+from aws_cdk import Duration, Stack, Token
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_s3 as s3
 from aws_cdk.aws_sns import ITopic, Topic
@@ -39,8 +39,12 @@ class ThumbnailGeneratorDeployment(Construct):
         scope: Construct,
         id: str,
         thumbnailer_name: str,
+        image: SageMakerDLCBasedImage,
+        s3_input_bucket: s3.Bucket,
         s3_output_bucket: s3.Bucket,
+        s3_input_prefix: Optional[str] = None,
         s3_output_prefix: str = "",
+        execution_role: Optional[iam.IRole] = None,
         sns_success_topic: Optional[ITopic] = None,
         sns_error_topic: Optional[ITopic] = None,
     ):
@@ -54,11 +58,21 @@ class ThumbnailGeneratorDeployment(Construct):
             As per CDK Construct parent.
         thumbnailer_name :
             Name to use for SageMaker Model/Endpoint/EndpointConfig
+        image :
+            Pre-staged SageMakerDLCBasedImage that the SageMaker Model/Endpoint should use.
+        s3_input_bucket :
+            Bucket from which input documents will be fetched (for SM Async Inference)
         s3_output_bucket :
             Bucket in which thumbnail outputs should be stored (for SM Async Inference)
+        s3_input_prefix :
+            Prefix under `s3_input_bucket` from which input documents will be fetched (for SM Async
+            Inference)
         s3_output_prefix :
             Prefix under `s3_output_bucket` in which thumbnail outputs should be stored (for SM
             Async Inference)
+        execution_role :
+            Optional pre-created IAM role to use for SageMaker model deployment. If not provided, a
+            new role will be created.
         sns_success_topic :
             SNS Topic to notify on successful inference (for SM Async Inference)
         sns_error_topic :
@@ -66,34 +80,36 @@ class ThumbnailGeneratorDeployment(Construct):
         """
         super().__init__(scope, id)
 
-        self.image = SageMakerDLCBasedImage(
-            self,
-            "Image",
-            directory=abs_path("../../notebooks/custom-containers/preproc", __file__),
-            file="Dockerfile",
-            ecr_repo="sm-ocr-preproc",
-            ecr_tag="pytorch-1.10-inf-cpu",
-            framework="pytorch",
-            use_gpu=False,
-            image_scope="inference",
-            py_version="py38",
-            version="1.10",
+        self.image = image
+
+        if execution_role is None:
+            execution_role = iam.Role(
+                self,
+                "ThumbnailerRole",
+                assumed_by=iam.ServicePrincipal("sagemaker.amazonaws.com"),
+                description="Role for CDK-created SageMaker endpoints in OCR Pipeline",
+            )
+        self.execution_role = execution_role
+        # Output S3 and SNS permissions will be configured automatically by the Model/Deployment.
+        # For input, we need to do it ourselves:
+        s3_input_bucket.grant_read(
+            self.execution_role,
+            s3_input_prefix + "*" if s3_input_prefix else None,
         )
 
-        thumbnailer_role = iam.Role(
+        # Also grant SageMaker default bucket access to the thumbnailer, for in-notebook testing:
+        s3.Bucket.from_bucket_arn(
             self,
-            "ThumbnailerRole",
-            assumed_by=iam.ServicePrincipal("sagemaker.amazonaws.com"),
-            description="Role for CDK-created SageMaker endpoints in OCR Pipeline",
-        )
-        # S3 and SNS permissions will be configured automatically by the Model/Deployment constructs
+            "SageMakerDefaultBucket",
+            f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
+        ).grant_read_write(self.execution_role)
 
         self.model = SageMakerCustomizedDLCModel(
             self,
             "Model",
             model_name=thumbnailer_name,
             image=self.image,
-            execution_role=thumbnailer_role,
+            execution_role=self.execution_role,
             entry_point="inference.py",
             source_dir=abs_path("../../notebooks/preproc", __file__),
         )
@@ -136,9 +152,12 @@ class GenerateThumbnailsStep(Construct):
         id: str,
         lambda_role: iam.Role,
         ssm_param_prefix: Union[Token, str],
+        input_bucket: s3.Bucket,
         thumbnails_bucket: s3.Bucket,
+        input_prefix: str = "",
         thumbnails_prefix: str = "",
         auto_deploy_thumbnailer: bool = False,
+        container_image: Optional[SageMakerDLCBasedImage] = None,
         shared_sagemaker_caller_lambda: Optional[SageMakerCallerFunction] = None,
         **kwargs,
     ):
@@ -155,10 +174,18 @@ class GenerateThumbnailsStep(Construct):
         ssm_param_prefix :
             Prefix to be applied to generated SSM pipeline configuration parameter names (including
             the parameter to configure SageMaker endpoint name for thumbnail generation).
+        input_bucket :
+            Bucket from which input documents will be fetched. If auto-deployment of a thumbnailer
+            endpoint is enabled, the model execution role will be granted access to this bucket
+            (limited to `input_prefix`).
         thumbnails_bucket :
             Bucket into which thumbnail results should be saved. This is only used when
             `deploy_auto_thumbnailer=True`: Otherwise will be configured at the point a user creates
             the endpoint from notebooks.
+        input_prefix :
+            Prefix under `input_bucket` from which input documents will be fetched. Used to
+            configure SageMaker model execution role permissions when auto-deployment of thumbnailer
+            endpoint is enabled.
         thumbnails_prefix :
             Prefix under `thumbnails_bucket` where thumbnail results should be saved. This is only
             used when `deploy_auto_thumbnailer=True`: Otherwise will be configured at the point a
@@ -166,6 +193,10 @@ class GenerateThumbnailsStep(Construct):
         auto_deploy_thumbnailer :
             Set `True` to also automatically deploy the SageMaker endpoint for thumbnail generation.
             Default `False` expects this to be configured later from the walkthrough notebooks.
+        container_image :
+            Pre-staged SageMakerDLCBasedImage that the thumbnailer step's SageMaker Model/Endpoint
+            should use if auto-deployment of the endpoint is enabled. Required if deployment is
+            enabled.
         shared_sagemaker_caller_lambda :
             Optional pre-existing SageMaker caller Lambda function, to share this between multiple
             SageMakerSSMSteps in the app if required.
@@ -175,11 +206,19 @@ class GenerateThumbnailsStep(Construct):
         async_callback_topic = Topic(self, f"SageMakerAsync-{id}")
 
         if auto_deploy_thumbnailer:
+            if not container_image:
+                raise ValueError(
+                    "When thumbnailer SageMaker Model/Endpoint is enabled, a container_image "
+                    "construct must be provided"
+                )
             self.deployment = ThumbnailGeneratorDeployment(
                 self,
                 "Thumbnailer",
                 thumbnailer_name="ocr-thumbnail-cdk",
+                image=container_image,
+                s3_input_bucket=input_bucket,
                 s3_output_bucket=thumbnails_bucket,
+                s3_input_prefix=input_prefix,
                 s3_output_prefix=thumbnails_prefix,
                 sns_success_topic=async_callback_topic,
                 sns_error_topic=async_callback_topic,
@@ -210,6 +249,7 @@ class GenerateThumbnailsStep(Construct):
             lambda_role=lambda_role,
             support_async_endpoints=True,
             comment="Post-Process the Textract result with Amazon SageMaker",
+            async_notify_topic=async_callback_topic,
             lambda_function=shared_sagemaker_caller_lambda,
             payload=sfn.TaskInput.from_object(
                 {

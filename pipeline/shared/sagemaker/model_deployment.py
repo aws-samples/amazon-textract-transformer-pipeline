@@ -312,7 +312,19 @@ class SageMakerCustomizedDLCModel(Construct):
                         actions=["s3:GetObject", "s3:GetObjectTorrent", "s3:GetObjectVersion"],
                         resources=[asset_bucket.arn_for_objects(self.asset.s3_object_key)],
                     ),
-                    PolicyStatement(actions=["ecr:GetAuthorizationToken"], resources=["*"]),
+                    PolicyStatement(
+                        actions=[
+                            # These actions take no resources
+                            "cloudwatch:PutMetricData",
+                            "ecr:GetAuthorizationToken",
+                            "logs:CreateLogDelivery",
+                            "logs:DeleteLogDelivery",
+                            "logs:GetLogDelivery",
+                            "logs:ListLogDeliveries",
+                            "logs:UpdateLogDelivery",
+                        ],
+                        resources=["*"],
+                    ),
                     PolicyStatement(
                         actions=[
                             "ecr:BatchCheckLayerAvailability",
@@ -322,6 +334,22 @@ class SageMakerCustomizedDLCModel(Construct):
                             "ecr:BatchCheckLayerAvailability",
                         ],
                         resources=[image.repo.repository_arn],
+                    ),
+                    PolicyStatement(
+                        actions=[
+                            # Log group level perms:
+                            "logs:CreateLogGroup",
+                            "logs:CreateLogStream",
+                            # Log stream level perms:
+                            "logs:PutLogEvents",
+                        ],
+                        # If you moved these perms from the model creation to the endpoint creation,
+                        # could further scope them down to:
+                        # Group: /aws/sagemaker/Endpoints/{ENDPOINT_NAME}
+                        # Streams like "{VARIANTNAME}/{UNIQUE_ID}"
+                        # arn:${Partition}:logs:${Region}:${Account}:log-group:${LogGroupName}
+                        # arn:${Partition}:logs:${Region}:${Account}:log-group:${LogGroupName}:log-stream:${LogStreamName}
+                        resources=["*"],
                     ),
                 ],
             ),

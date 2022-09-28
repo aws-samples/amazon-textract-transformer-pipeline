@@ -34,7 +34,7 @@ from .ocr import TextractOcrStep
 from .postprocessing import LambdaPostprocStep
 from .review import A2IReviewStep
 from .shared import abs_path
-from .shared.sagemaker import SageMakerCallerFunction
+from .shared.sagemaker import SageMakerCallerFunction, SageMakerDLCBasedImage
 from .thumbnails import GenerateThumbnailsStep
 
 S3_TRIGGER_LAMBDA_PATH = abs_path("fn-trigger", __file__)
@@ -161,6 +161,20 @@ class ProcessingPipeline(Construct):
             description="Lambda function to invoke SSM-parameterized SageMaker endpoints from SFn",
         )
 
+        self.preproc_image = SageMakerDLCBasedImage(
+            self,
+            "Image",
+            directory=abs_path("../notebooks/custom-containers/preproc", __file__),
+            file="Dockerfile",
+            ecr_repo="sm-ocr-preproc",
+            ecr_tag="pytorch-1.10-inf-cpu",
+            framework="pytorch",
+            use_gpu=False,
+            image_scope="inference",
+            py_version="py38",
+            version="1.10",
+        )
+
         self.ocr_step = TextractOcrStep(
             self,
             "OCRStep",
@@ -175,8 +189,10 @@ class ProcessingPipeline(Construct):
                 lambda_role=self.shared_lambda_role,
                 ssm_param_prefix=ssm_param_prefix,
                 shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
+                input_bucket=self.input_bucket,
                 thumbnails_bucket=self.enriched_results_bucket,
                 thumbnails_prefix="preproc",
+                container_image=self.preproc_image,
             )
             ocr_preproc_states = [self.ocr_step.sfn_task, self.thumbnails_step.sfn_task]
         else:
