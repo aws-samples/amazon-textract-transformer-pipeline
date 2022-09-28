@@ -4,7 +4,6 @@
 """
 # Python Built-Ins:
 import json
-import os
 from typing import Union
 
 # External Dependencies:
@@ -17,8 +16,11 @@ import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
 from constructs import Construct
 
+# Local Dependencies:
+from ..shared import abs_path
 
-POSTPROC_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-postprocess")
+
+POSTPROC_LAMBDA_PATH = abs_path("fn-postprocess", __file__)
 
 # Not technically necessary as the notebook guides users to configure this through AWS SSM, but
 # useful to set the defaults per the notebook for speedy setup:

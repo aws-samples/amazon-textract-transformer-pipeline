@@ -3,7 +3,6 @@
 """CDK for human review stage of the OCR pipeline
 """
 # Python Built-Ins:
-import os
 from typing import Union
 
 # External Dependencies:
@@ -18,9 +17,12 @@ import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
 from constructs import Construct
 
+# Local Dependencies:
+from ..shared import abs_path
 
-START_REVIEW_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-start-review")
-REVIEW_CALLBACK_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-review-callback")
+
+START_REVIEW_LAMBDA_PATH = abs_path("fn-start-review", __file__)
+REVIEW_CALLBACK_LAMBDA_PATH = abs_path("fn-review-callback", __file__)
 
 
 class A2IReviewStep(Construct):

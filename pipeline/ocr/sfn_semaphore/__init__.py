@@ -18,7 +18,6 @@ Usage:
 """
 # Python Built-Ins:
 from __future__ import annotations
-import os
 from typing import Optional
 
 # External Dependencies:
@@ -33,7 +32,10 @@ import aws_cdk.aws_stepfunctions as sfn
 import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
 from constructs import Construct
 
-TPS_ACQUIRER_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-acquire-lock")
+# Local Dependencies:
+from ...shared import abs_path
+
+TPS_ACQUIRER_LAMBDA_PATH = abs_path("fn-acquire-lock", __file__)
 
 
 class SFnSemaphoreCleanUpChain(Construct):

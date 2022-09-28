@@ -2,9 +2,6 @@
 # SPDX-License-Identifier: MIT-0
 """CDK for core OCR (Amazon Textract) stage of the OCR pipeline
 """
-# Python Built-Ins:
-import os
-
 # External Dependencies:
 from aws_cdk import Duration
 import aws_cdk.aws_dynamodb as dynamodb
@@ -20,9 +17,10 @@ from constructs import Construct
 
 # Local Dependencies:
 from . import sfn_semaphore
+from ..shared import abs_path
 
 
-TEXTRACT_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-call-textract")
+TEXTRACT_LAMBDA_PATH = abs_path("fn-call-textract", __file__)
 
 
 class TextractOcrStep(Construct):

@@ -3,7 +3,6 @@
 """CDK Construct for an OCR pipeline with field post-processing and human review
 """
 # Python Built-Ins:
-import os
 from typing import List, Optional, Union
 
 # External Dependencies:
@@ -34,10 +33,11 @@ from .iam_utils import (
 from .ocr import TextractOcrStep
 from .postprocessing import LambdaPostprocStep
 from .review import A2IReviewStep
+from .shared import abs_path
 from .shared.sagemaker import SageMakerCallerFunction
 from .thumbnails import GenerateThumbnailsStep
 
-S3_TRIGGER_LAMBDA_PATH = os.path.join(os.path.dirname(__file__), "fn-trigger")
+S3_TRIGGER_LAMBDA_PATH = abs_path("fn-trigger", __file__)
 
 
 class ProcessingPipeline(Construct):
