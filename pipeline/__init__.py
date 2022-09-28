@@ -175,6 +175,8 @@ class ProcessingPipeline(Construct):
                 lambda_role=self.shared_lambda_role,
                 ssm_param_prefix=ssm_param_prefix,
                 shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
+                thumbnails_bucket=self.enriched_results_bucket,
+                thumbnails_prefix="preproc",
             )
             ocr_preproc_states = [self.ocr_step.sfn_task, self.thumbnails_step.sfn_task]
         else:
