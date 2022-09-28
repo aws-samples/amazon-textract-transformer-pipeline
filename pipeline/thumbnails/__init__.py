@@ -178,7 +178,7 @@ class GenerateThumbnailsStep(Construct):
             self.deployment = ThumbnailGeneratorDeployment(
                 self,
                 "Thumbnailer",
-                thumbnailer_name="ocr-thumbnail-cdk-8",
+                thumbnailer_name="ocr-thumbnail-cdk",
                 s3_output_bucket=thumbnails_bucket,
                 s3_output_prefix=thumbnails_prefix,
                 sns_success_topic=async_callback_topic,
