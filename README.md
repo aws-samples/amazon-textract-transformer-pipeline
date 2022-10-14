@@ -141,14 +141,16 @@ pip install -e .[dev]
 
 **Step 3: Deploy the solution stacks with CDK**
 
-To deploy (or update, if already deployed) all stacks in the solution to your default AWS Region, run:
+To deploy (or update, if already deployed) all stacks in the solution to your default AWS Region, with default configuration, run:
 
 ```sh
 cdk deploy --all
 # To skip approval prompts, you can optionally add: --require-approval never
 ```
 
-> Note that some AWS Regions may not support all services required to run the solution, but it has been tested successfully in at least `ap-southeast-1` (Singapore), `us-east-1` (N. Virginia) and `us-east-2` (Ohio).
+Some aspects of the solution can also be configured by setting environment variables before running `cdk deploy`. See [cdk_app.py](cdk_app.py) and the [Customization Guide](CUSTOMIZATION_GUIDE.md) for details, but the defaults are a good starting point.
+
+> Note that some AWS Regions may not support all services required to run the solution, but it has been tested successfully in at least `ap-southeast-1` (Singapore), `us-east-1` (N. Virginia), and `us-east-2` (Ohio).
 
 You'll be able to see the deployed stacks in the [AWS CloudFormation Console](https://console.aws.amazon.com/cloudformation/home?#/stacks).
 

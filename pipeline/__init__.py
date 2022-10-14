@@ -6,7 +6,7 @@
 from typing import List, Optional, Union
 
 # External Dependencies:
-from aws_cdk import Duration, Fn, RemovalPolicy, Stack, Token
+from aws_cdk import Duration, Fn, RemovalPolicy, Token
 from aws_cdk.aws_iam import (
     Effect,
     ManagedPolicy,
@@ -34,7 +34,11 @@ from .ocr import TextractOcrStep
 from .postprocessing import LambdaPostprocStep
 from .review import A2IReviewStep
 from .shared import abs_path
-from .shared.sagemaker import SageMakerCallerFunction
+from .shared.sagemaker import (
+    get_sagemaker_default_bucket,
+    SageMakerCallerFunction,
+    SageMakerDLCBasedImage,
+)
 from .thumbnails import GenerateThumbnailsStep
 
 S3_TRIGGER_LAMBDA_PATH = abs_path("fn-trigger", __file__)
@@ -54,29 +58,36 @@ class ProcessingPipeline(Construct):
         input_bucket: s3.Bucket,
         ssm_param_prefix: Union[Token, str],
         use_thumbnails: bool = True,
+        enable_sagemaker_autoscaling: bool = False,
         **kwargs,
     ):
         """Create a ProcessingPipeline
 
         Arguments
         ---------
-        scope : Construct
+        scope :
             CDK construct scope
-        id : str
+        id :
             CDK construct ID
-        input_bucket : aws_cdk.aws_s3.Bucket
+        input_bucket :
             The raw input bucket, to which this pipeline will attach and listen for documents being
             uploaded.
-        ssm_param_prefix : Union[aws_cdk.Token, str]
+        ssm_param_prefix :
             A prefix to apply to generated AWS SSM Parameter Store configuration parameter names,
             to help keep the account tidy. Should begin and end with a forward slash.
-        use_thumbnails : bool
+        use_thumbnails :
             When `True`, the pipeline is configured to call a page thumbnail image generation
             endpoint and pass these resized images through to the SageMaker document understanding
             / enrichment model. Set `False` to skip deploying these features. Pipelines deployed
             with `use_thumbnails=True` will fail if a thumbnailer endpoint is not set up (see
             SageMaker notebooks). Pipelines deployed with `use_thumbnails=False` cannot fully
             utilize model architectures that use page images for inference (such as LayoutLMv2+).
+        enable_sagemaker_autoscaling :
+            Set True to enable auto-scale-to-zero on any SageMaker endpoints created by the stack.
+            Turning this on should improve cost-efficiency for workloads which are often idle, but
+            will introduce cold-start delays to affected stages of the pipeline so may not be ideal
+            during development. This setting does not affect endpoints created *outside* the stack
+            and later plumbed in to the pipeline (i.e. endpoints deployed from notebooks).
         **kwargs : Any
             Passed through to parent Construct
         """
@@ -131,7 +142,7 @@ class ProcessingPipeline(Construct):
 
         self.shared_lambda_role = Role(
             self,
-            "ProcessingPipelineLambdaRole",
+            "SharedLambdaRole",
             assumed_by=ServicePrincipal("lambda.amazonaws.com"),
             description="Shared execution role for OCR pipeline Lambda functions",
             managed_policies=[
@@ -145,11 +156,7 @@ class ProcessingPipeline(Construct):
         self.textract_results_bucket.grant_read_write(self.shared_lambda_role)
         self.enriched_results_bucket.grant_read_write(self.shared_lambda_role)
         self.human_reviews_bucket.grant_read_write(self.shared_lambda_role)
-        s3.Bucket.from_bucket_arn(
-            self,
-            "SageMakerDefaultBucket",
-            f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
-        ).grant_read_write(self.shared_lambda_role)
+        get_sagemaker_default_bucket(self).grant_read_write(self.shared_lambda_role)
 
         # The thumbnail generation and enrichment model steps can share a SageMaker integration
         # Lambda function:
@@ -159,6 +166,20 @@ class ProcessingPipeline(Construct):
             support_async_endpoints=True,
             role=self.shared_lambda_role,
             description="Lambda function to invoke SSM-parameterized SageMaker endpoints from SFn",
+        )
+
+        self.preproc_image = SageMakerDLCBasedImage(
+            self,
+            "PreprocessingImage",
+            directory=abs_path("../notebooks/custom-containers/preproc", __file__),
+            file="Dockerfile",
+            ecr_repo="sm-ocr-preprocs",
+            ecr_tag="pytorch-1.10-inf-cpu",
+            framework="pytorch",
+            use_gpu=False,
+            image_scope="inference",
+            py_version="py38",
+            version="1.10",
         )
 
         self.ocr_step = TextractOcrStep(
@@ -175,6 +196,12 @@ class ProcessingPipeline(Construct):
                 lambda_role=self.shared_lambda_role,
                 ssm_param_prefix=ssm_param_prefix,
                 shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
+                input_bucket=self.input_bucket,
+                thumbnails_bucket=self.enriched_results_bucket,
+                thumbnails_prefix="preproc",
+                container_image=self.preproc_image,
+                auto_deploy_thumbnailer=True,
+                enable_autoscaling=enable_sagemaker_autoscaling,
             )
             ocr_preproc_states = [self.ocr_step.sfn_task, self.thumbnails_step.sfn_task]
         else:
@@ -248,7 +275,7 @@ class ProcessingPipeline(Construct):
 
         self.state_machine = sfn.StateMachine(
             self,
-            "ProcessingPipelineStateMachine",
+            "PipelineStateMachine",
             definition=definition,
             state_machine_type=sfn.StateMachineType.STANDARD,
             timeout=Duration.minutes(20),
@@ -264,7 +291,7 @@ class ProcessingPipeline(Construct):
 
         self.trigger_lambda_role = Role(
             self,
-            "ProcessingPipelineTriggerLambdaRole",
+            "S3PipelineTriggerLambdaRole",
             assumed_by=ServicePrincipal("lambda.amazonaws.com"),
             description="Execution role for S3 notification function triggering OCR pipeline",
             managed_policies=[

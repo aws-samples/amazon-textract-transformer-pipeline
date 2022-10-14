@@ -42,11 +42,12 @@ class ProjectSession:
 
     SSM_PREFIX: str = ""
     STATIC_PARAMS: Dict[str, str] = {
-        "static/PlainTextractStateMachine": "plain_textract_sfn_arn",
         "static/A2IExecutionRoleArn": "a2i_execution_role_arn",
         "static/InputBucket": "pipeline_input_bucket_name",
         "static/ReviewsBucket": "pipeline_reviews_bucket_name",
         "static/PipelineStateMachine": "pipeline_sfn_arn",
+        "static/PlainTextractStateMachine": "plain_textract_sfn_arn",
+        "static/PreprocImageURI": "preproc_image_uri",
         "static/ThumbnailsCallbackTopicArn": "thumbnails_callback_topic_arn",
         "static/ModelCallbackTopicArn": "model_callback_topic_arn",
         "static/ModelResultsBucket": "model_results_bucket",
@@ -65,6 +66,7 @@ class ProjectSession:
     pipeline_reviews_bucket_name: str
     pipeline_sfn_arn: str
     plain_textract_sfn_arn: str
+    preproc_image_uri: str
     model_callback_topic_arn: str
     model_results_bucket: str
     sm_image_build_role: str

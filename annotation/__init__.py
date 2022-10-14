@@ -182,10 +182,11 @@ class AnnotationInfra(Construct):
                 ),
             ],
         )
+        stack = Stack.of(self)
         Bucket.from_bucket_arn(
             self,
             "SageMakerDefaultBucket",
-            f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
+            f"arn:{stack.partition}:s3:::sagemaker-{stack.region}-{stack.account}",
         ).grant_read_write(self.lambda_role)
 
         self._pre_lambda = PythonFunction(
