@@ -142,7 +142,7 @@ class ProcessingPipeline(Construct):
 
         self.shared_lambda_role = Role(
             self,
-            "ProcessingPipelineLambdaRole",
+            "SharedLambdaRole",
             assumed_by=ServicePrincipal("lambda.amazonaws.com"),
             description="Shared execution role for OCR pipeline Lambda functions",
             managed_policies=[
@@ -170,7 +170,7 @@ class ProcessingPipeline(Construct):
 
         self.preproc_image = SageMakerDLCBasedImage(
             self,
-            "Image",
+            "PreprocessingImage",
             directory=abs_path("../notebooks/custom-containers/preproc", __file__),
             file="Dockerfile",
             ecr_repo="sm-ocr-preprocs",
@@ -275,7 +275,7 @@ class ProcessingPipeline(Construct):
 
         self.state_machine = sfn.StateMachine(
             self,
-            "ProcessingPipelineStateMachine",
+            "PipelineStateMachine",
             definition=definition,
             state_machine_type=sfn.StateMachineType.STANDARD,
             timeout=Duration.minutes(20),
@@ -291,7 +291,7 @@ class ProcessingPipeline(Construct):
 
         self.trigger_lambda_role = Role(
             self,
-            "ProcessingPipelineTriggerLambdaRole",
+            "S3PipelineTriggerLambdaRole",
             assumed_by=ServicePrincipal("lambda.amazonaws.com"),
             description="Execution role for S3 notification function triggering OCR pipeline",
             managed_policies=[

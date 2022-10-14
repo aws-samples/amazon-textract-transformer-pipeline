@@ -3,7 +3,7 @@
 """CDK for core OCR (Amazon Textract) stage of the OCR pipeline
 """
 # External Dependencies:
-from aws_cdk import Duration
+from aws_cdk import Duration, RemovalPolicy
 import aws_cdk.aws_dynamodb as dynamodb
 from aws_cdk.aws_iam import Effect, PolicyDocument, PolicyStatement, Role, ServicePrincipal
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
@@ -99,6 +99,7 @@ class TextractOcrStep(Construct):
                 name="TextractJobId",
                 type=dynamodb.AttributeType.STRING,
             ),
+            removal_policy=RemovalPolicy.DESTROY,
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             time_to_live_attribute="ExpiresAt",
         )
