@@ -6,7 +6,7 @@
 from typing import Union
 
 # External Dependencies:
-from aws_cdk import Duration, Stack, Token
+from aws_cdk import Duration, Token
 from aws_cdk.aws_iam import Effect, PolicyStatement, Role, ServicePrincipal
 from aws_cdk.aws_lambda import Runtime as LambdaRuntime
 from aws_cdk.aws_lambda_python_alpha import PythonFunction
@@ -19,6 +19,7 @@ from constructs import Construct
 
 # Local Dependencies:
 from ..shared import abs_path
+from ..shared.sagemaker import get_sagemaker_default_bucket
 
 
 START_REVIEW_LAMBDA_PATH = abs_path("fn-start-review", __file__)
@@ -106,11 +107,7 @@ class A2IReviewStep(Construct):
         )
         input_bucket.grant_read(self.a2i_role)
         reviews_bucket.grant_read_write(self.a2i_role)
-        Bucket.from_bucket_arn(
-            self,
-            "SageMakerDefaultBucket",
-            f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
-        ).grant_read_write(self.a2i_role)
+        get_sagemaker_default_bucket(self).grant_read_write(self.a2i_role)
 
         reviews_bucket.add_event_notification(
             dest=s3n.LambdaDestination(self.callback_lambda),

@@ -3,13 +3,25 @@
 """CDK for deploying SageMaker Models / Endpoints
 """
 # Python Built-Ins:
+from dataclasses import dataclass
 from logging import getLogger
 import os
 import subprocess
-from typing import Dict, List, Mapping, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 # External Dependencies:
-from aws_cdk import BundlingOptions, BundlingOutput, IgnoreMode, Stack, SymlinkFollowMode
+from aws_cdk import (
+    BundlingOptions,
+    BundlingOutput,
+    CfnTag,
+    Duration,
+    IgnoreMode,
+    RemovalPolicy,
+    Stack,
+    SymlinkFollowMode,
+)
+import aws_cdk.aws_applicationautoscaling as appscaling
+from aws_cdk.aws_cloudwatch import Metric
 import aws_cdk.aws_ecr as ecr
 from aws_cdk.aws_ecr_assets import (
     DockerImageAsset,
@@ -17,7 +29,7 @@ from aws_cdk.aws_ecr_assets import (
     NetworkMode,
     Platform,
 )
-from aws_cdk.aws_iam import IRole, Policy, PolicyDocument, PolicyStatement
+import aws_cdk.aws_iam as iam
 from aws_cdk.aws_kms import IKey
 import aws_cdk.aws_lambda as aws_lambda
 import aws_cdk.aws_s3 as s3
@@ -30,6 +42,21 @@ from sagemaker.image_uris import retrieve as sm_image_retrieve
 
 
 logger = getLogger("sagemaker_deployment")
+
+
+@dataclass
+class SageMakerDLCSpec:
+    """Data class to specify a SageMaker Deep Learning Container
+
+    Contains parameters for looking up container image URIs via SageMaker Python SDK.
+    """
+
+    framework: str
+    py_version: str
+    version: str
+    use_gpu: bool = False
+    image_scope: str = "inference"
+    base_framework_version: Optional[str] = None
 
 
 class SageMakerDLCBasedImage(Construct):
@@ -160,7 +187,13 @@ class SageMakerDLCBasedImage(Construct):
         if isinstance(ecr_repo, ecr.Repository):
             self.repo = ecr_repo
         else:
-            self.repo = ecr.Repository.from_repository_name(self, "Repo", ecr_repo)
+            self.repo = ecr.Repository(
+                self,
+                "Repo",
+                image_scan_on_push=True,
+                removal_policy=RemovalPolicy.DESTROY,
+                repository_name=ecr_repo,
+            )
 
         image = DockerImageAsset(
             self,
@@ -247,13 +280,14 @@ class SageMakerCustomizedDLCModel(Construct):
         self,
         scope: Construct,
         id: str,
-        model_name: str,
         image: SageMakerDLCBasedImage,
-        execution_role: IRole,
+        execution_role: iam.IRole,
         entry_point: str,
         source_dir: Union[str, os.PathLike],
         environment: Optional[Mapping[str, str]] = None,
         max_payload_size: Optional[int] = 104857600,
+        model_name: Optional[str] = None,
+        tags: Optional[Sequence[Union[CfnTag, Dict[str, Any]]]] = None,
     ):
         """Create a SageMakerCustomizedDLCModel
 
@@ -263,8 +297,6 @@ class SageMakerCustomizedDLCModel(Construct):
             As per CDK Construct parent.
         id :
             As per CDK Construct parent.
-        model_name :
-            SageMaker Model name to create in the API. (Currently mandatory).
         image :
             Customized SageMakerDLCBasedImage container the model should use. (Using pre-built
             SageMaker framework/algorithm here containers is not supported at this time).
@@ -286,6 +318,10 @@ class SageMakerCustomizedDLCModel(Construct):
             endpoint). This setting may not work for all frameworks as implemented (e.g. definitely
             not TensorFlow). Set a different number to adjust the limit, or None to remove these
             environment variables.
+        model_name :
+            Optional explicit SageMaker Model name to create in the API.
+        tags :
+            Optional resource tags to apply to the generated Model.
         """
         super().__init__(scope, id)
 
@@ -303,16 +339,16 @@ class SageMakerCustomizedDLCModel(Construct):
         )
 
         asset_bucket = s3.Bucket.from_bucket_name(self, "AssetBucket", self.asset.s3_bucket_name)
-        assets_policy = Policy(
+        assets_policy = iam.Policy(
             self,
             "CDKArtifactAccess",
-            document=PolicyDocument(
+            document=iam.PolicyDocument(
                 statements=[
-                    PolicyStatement(
+                    iam.PolicyStatement(
                         actions=["s3:GetObject", "s3:GetObjectTorrent", "s3:GetObjectVersion"],
                         resources=[asset_bucket.arn_for_objects(self.asset.s3_object_key)],
                     ),
-                    PolicyStatement(
+                    iam.PolicyStatement(
                         actions=[
                             # These actions take no resources
                             "cloudwatch:PutMetricData",
@@ -325,7 +361,7 @@ class SageMakerCustomizedDLCModel(Construct):
                         ],
                         resources=["*"],
                     ),
-                    PolicyStatement(
+                    iam.PolicyStatement(
                         actions=[
                             "ecr:BatchCheckLayerAvailability",
                             "ecr:BatchGetImage",
@@ -335,7 +371,7 @@ class SageMakerCustomizedDLCModel(Construct):
                         ],
                         resources=[image.repo.repository_arn],
                     ),
-                    PolicyStatement(
+                    iam.PolicyStatement(
                         actions=[
                             # Log group level perms:
                             "logs:CreateLogGroup",
@@ -374,7 +410,7 @@ class SageMakerCustomizedDLCModel(Construct):
         }
         env_final.update(environment or {})
 
-        self.cfn_model = sagemaker_cdk.CfnModel(
+        self._cfn_model = sagemaker_cdk.CfnModel(
             self,
             "Model",
             execution_role_arn=execution_role.role_arn,
@@ -384,16 +420,18 @@ class SageMakerCustomizedDLCModel(Construct):
                 model_data_url=self.asset.s3_object_url,
             ),
             model_name=model_name,
+            tags=tags,
         )
-        self.cfn_model.node.add_dependency(assets_policy)
+        self._cfn_model.node.add_dependency(assets_policy)
+        self._cfn_model.node.add_dependency(image.deployment)
 
     @property
-    def execution_role(self) -> IRole:
+    def execution_role(self) -> iam.IRole:
         return self._execution_role
 
     @property
     def model_name(self) -> str:
-        return self.cfn_model.model_name
+        return self._cfn_model.attr_model_name
 
 
 class SageMakerAsyncInferenceConfig:
@@ -489,6 +527,206 @@ class SageMakerAsyncInferenceConfig:
         return self._sns_success_topic
 
 
+class SageMakerAutoscalingRole(iam.Role):
+    """IAM role with service principal and inline policies pre-configured for SM auto-scaling"""
+
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        description: Optional[str] = None,
+        external_ids: Optional[Sequence[str]] = None,
+        inline_policies: Optional[Mapping[str, iam.PolicyDocument]] = None,
+        managed_policies: Optional[Sequence[iam.IManagedPolicy]] = None,
+        max_session_duration: Optional[Duration] = None,
+        path: Optional[str] = None,
+        permissions_boundary: Optional[iam.IManagedPolicy] = None,
+        role_name: Optional[str] = None,
+        autoscaling_policy_name: str = "SageMakerAutoscaling",
+        **kwargs,
+    ):
+        """Create a SageMakerAutoscalingRole
+
+        The role principal is set automatically. An inline policy will automatically be added (with
+        name given by `autoscaling_policy_name`) to grant autoscaling permissions. Otherwise,
+        parameters are as per `aws_iam.Role`.
+        """
+        if not inline_policies:
+            inline_policies = {}
+        if autoscaling_policy_name in inline_policies:
+            raise ValueError(
+                "Cannot create autoscaling_policy_name %s because this name is already taken in "
+                "the provided inline_policies map." % autoscaling_policy_name
+            )
+        inline_policies[autoscaling_policy_name] = iam.PolicyDocument(
+            statements=[
+                iam.PolicyStatement(
+                    actions=[
+                        "autoscaling:*",
+                        "sagemaker:DescribeEndpoint",
+                        "sagemaker:DescribeEndpointConfig",
+                        "sagemaker:UpdateEndpointWeightsAndCapacities",
+                        "cloudwatch:PutMetricAlarm",
+                        "cloudwatch:DescribeAlarms",
+                        "cloudwatch:DeleteAlarms",
+                    ],
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    actions=["iam:CreateServiceLinkedRole"],
+                    resources=[
+                        "arn:aws:iam::*:role/aws-service-role/sagemaker.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_SageMakerEndpoint"
+                    ],
+                    conditions={
+                        "StringLike": {
+                            "iam:AWSServiceName": "sagemaker.application-autoscaling.amazonaws.com",
+                        }
+                    },
+                ),
+            ],
+        )
+
+        super().__init__(
+            scope,
+            id,
+            assumed_by=iam.ServicePrincipal("sagemaker.application-autoscaling.amazonaws.com"),
+            description=description,
+            external_ids=external_ids,
+            inline_policies=inline_policies,
+            managed_policies=managed_policies,
+            max_session_duration=max_session_duration,
+            path=path,
+            permissions_boundary=permissions_boundary,
+            role_name=role_name,
+            **kwargs,
+        )
+
+
+class EndpointAutoscaler(appscaling.ScalableTarget):
+    """Auto-scaling target for a SageMaker endpoint
+
+    Use standard methods like `scale_to_track_metric()` and `scale_on_metric()` to define actual
+    scaling policies as usual. In addition to the pre-defined target metric from
+    `appscaling.PredefinedMetric.SAGEMAKER_VARIANT_INVOCATIONS_PER_INSTANCE`, you can use the
+    convenience methods on this class to specify other common, custom SageMaker metrics for async
+    inference: `sagemaker_backlog_size_metric()` and `sagemaker_backlog_without_cap_metric()`.
+    """
+
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        max_capacity: int,
+        min_capacity: int,
+        endpoint_name: str,
+        variant_name: str = "AllTraffic",
+        role: Optional[iam.Role] = None,
+        **kwargs,
+    ):
+        """Create an EndpointAutoscaler
+
+        Parameters as per aws_applicationautoscaling.ScalableTarget with the following exceptions:
+        - Instead of a `resource_id`, you specify a SageMaker `endpoint_name` and a `variant_name`
+            (which defaults to the standard 'AllTraffic' variant name if not set)
+        - You do not need to specify the `service_namespace` or `scalable_dimension`
+        - If you don't provide an IAM Role, one will be created for you with SageMaker endpoint
+            auto-scaling permissions.
+        """
+        self._endpoint_name = endpoint_name
+        self._variant_name = variant_name
+        resource_id = f"endpoint/{endpoint_name}/variant/{variant_name}"
+        if role is None:
+            role = SageMakerAutoscalingRole(scope, "AutoScalingRole")
+        super().__init__(
+            scope,
+            id,
+            max_capacity=max_capacity,
+            min_capacity=min_capacity,
+            resource_id=resource_id,
+            scalable_dimension="sagemaker:variant:DesiredInstanceCount",
+            service_namespace=appscaling.ServiceNamespace.SAGEMAKER,
+            role=role,
+            **kwargs,
+        )
+
+    @classmethod
+    def sagemaker_backlog_size_metric_for_endpoint(cls, endpoint_name: str) -> Metric:
+        return Metric(
+            metric_name="ApproximateBacklogSizePerInstance",
+            namespace="AWS/SageMaker",
+            dimensions_map={
+                "EndpointName": endpoint_name,
+            },
+            statistic="Average",
+        )
+
+    def sagemaker_backlog_size_metric(self) -> Metric:
+        return self.sagemaker_backlog_size_metric_for_endpoint(self._endpoint_name)
+
+    @classmethod
+    def sagemaker_backlog_without_cap_metric_for_endpoint(cls, endpoint_name: str) -> Metric:
+        return Metric(
+            metric_name="HasBacklogWithoutCapacity",
+            namespace="AWS/SageMaker",
+            dimensions_map={
+                "EndpointName": endpoint_name,
+            },
+            statistic="Average",
+        )
+
+    def sagemaker_backlog_without_cap_metric(self) -> Metric:
+        return self.sagemaker_backlog_without_cap_metric_for_endpoint(self._endpoint_name)
+
+    def scale_async_endpoint_simple(
+        self,
+        target_backlog_per_instance: float = 5.0,
+        tracking_scale_in_cooldown: Duration = Duration.minutes(5),
+        tracking_scale_out_cooldown: Duration = Duration.minutes(5),
+        bootstrap_cooldown: Duration = Duration.seconds(150),
+    ) -> List[Union[appscaling.StepScalingPolicy, appscaling.TargetTrackingScalingPolicy]]:
+        """Create default scaling policies for a responsive but economical SageMaker async endpoint
+
+        Set up scaling policies to track a target average backlog size per instance (typically >1),
+        but also to spin up at least one instance when a single inference request is received. If
+        backlog target tracking is used alone, no instances would be started until the backlog
+        threshold is exceeded.
+
+        Parameters
+        ----------
+        target_backlog_per_instance :
+            Overall target request queue length per instance for auto-scaling (useful for
+            high-volume scaling).
+        tracking_scale_in_cooldown :
+            Cooldown period for reducing capacity due to insufficient backlog
+        tracking_scale_out_cooldown :
+            Cooldown period for adding capacity due to excessive backlog
+        bootstrap_cooldown :
+            Cooldown period for adding a single "bootstrap" instance when a request arrives and no
+            instances are currently runnning.
+        """
+        tracking_policy = self.scale_to_track_metric(
+            "TargetScaling",
+            target_value=target_backlog_per_instance,
+            custom_metric=self.sagemaker_backlog_size_metric(),
+            scale_in_cooldown=tracking_scale_in_cooldown,
+            scale_out_cooldown=tracking_scale_out_cooldown,
+        )
+        bootstrap_policy = self.scale_on_metric(
+            "BootstrapScaling",
+            metric=self.sagemaker_backlog_without_cap_metric(),
+            scaling_steps=[
+                appscaling.ScalingInterval(change=1, lower=1.0),
+                # Dummy step, never triggered but required for param validation:
+                appscaling.ScalingInterval(change=0, upper=-10),
+            ],
+            adjustment_type=appscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+            cooldown=bootstrap_cooldown,
+        )
+        return [tracking_policy, bootstrap_policy]
+
+
 class SageMakerModelDeployment(Construct):
     """Deploy a SageMaker Model to an Endpoint (real-time or async)
 
@@ -503,11 +741,12 @@ class SageMakerModelDeployment(Construct):
         self,
         scope: Construct,
         id: str,
-        endpoint_name: str,
         model: SageMakerCustomizedDLCModel,
         instance_type: str,
         initial_instance_count: int = 1,
         async_inference_config: Optional[SageMakerAsyncInferenceConfig] = None,
+        endpoint_name: Optional[str] = None,
+        tags: Optional[Sequence[Union[CfnTag, Dict[str, Any]]]] = None,
     ):
         """Create a SageMakerModelDeployment
 
@@ -517,9 +756,6 @@ class SageMakerModelDeployment(Construct):
             As per CDK Construct parent.
         id :
             As per CDK Construct parent.
-        endpoint_name :
-            Name of the SageMaker Endpoint to create (mandatory). An Endpoint Configuration will be
-            created using the same name.
         model :
             Existing SageMakerCustomizedDLCModel construct to use for the endpoint.
         instance_type :
@@ -530,6 +766,11 @@ class SageMakerModelDeployment(Construct):
         async_inference_config :
             Provide this configuration if you'd like to deploy an asynchronous endpoint. Default
             `None` yields a real-time endpoint.
+        endpoint_name :
+            Optional explicit of the SageMaker Endpoint to create. An Endpoint Configuration will be
+            created using the same name, if set.
+        tags :
+            Optional resource tags (to be applied to both SageMaker EndpointConfig and Endpoint)
         """
         super().__init__(scope, id)
 
@@ -548,7 +789,7 @@ class SageMakerModelDeployment(Construct):
                 ):
                     async_inference_config.sns_error_topic.grant_publish(model.execution_role)
 
-        self.endpoint_config = sagemaker_cdk.CfnEndpointConfig(
+        self._endpoint_config = sagemaker_cdk.CfnEndpointConfig(
             self,
             "EndpointConfig",
             endpoint_config_name=endpoint_name,
@@ -564,13 +805,19 @@ class SageMakerModelDeployment(Construct):
                     # serverless_config not yet supported
                 )
             ],
+            tags=tags,
         )
-        self.endpoint_config.add_depends_on(model.cfn_model)
+        self._endpoint_config.add_depends_on(model._cfn_model)
 
-        self.endpoint = sagemaker_cdk.CfnEndpoint(
+        self._endpoint = sagemaker_cdk.CfnEndpoint(
             self,
             "Endpoint",
-            endpoint_config_name=self.endpoint_config.endpoint_config_name,
+            endpoint_config_name=self._endpoint_config.attr_endpoint_config_name,
             endpoint_name=endpoint_name,
+            tags=tags,
         )
-        self.endpoint.add_depends_on(self.endpoint_config)
+        self._endpoint.add_depends_on(self._endpoint_config)
+
+    @property
+    def endpoint_name(self) -> str:
+        return self._endpoint.attr_endpoint_name

@@ -4,6 +4,13 @@ This file contains suggestions and considerations to help you apply and customiz
 
 > ⚠️ **Remember:** This repository is an illustrative sample, not intended as fully production-ready code. The guidance here is **not** an exhaustive path-to-production checklist.
 
+## Contents
+
+1. [Bring your own dataset guidance](#Bring-your-own-dataset--Getting-started-step-by-step)
+1. [Customizing the pipeline](#Customizing-the-pipeline)
+1. [Customizing the models](#Customizing-the-models)
+
+---
 
 ## Bring your own dataset: Getting started step-by-step
 
@@ -79,6 +86,7 @@ From the labelling job onwards (through notebook 2 and beyond), the flow should 
 
 If your dataset is particularly tiny (more like e.g. 30 labelled pages than 100), it might be helpful to try increasing the `early_stopping_patience` hyperparameter to force the training job to re-process the same examples for longer. You could also explore hyperparameter tuning. However, it'd likely have a bigger impact to spend that time annotatting more data instead!
 
+---
 
 ## Customizing the pipeline
 
@@ -86,7 +94,16 @@ If your dataset is particularly tiny (more like e.g. 30 labelled pages than 100)
 
 By default, the deployed pipeline will invoke a page thumbnail image generation endpoint in parallel to running input documents through Amazon Textract. These are useful additional inputs for some model architectures supported by the pipeline (e.g. LayoutLMv2, LayoutXLM), but are not required or used by LayoutLMv1.
 
-If you know you'll be using the pipeline with LayoutLMv1 models only, you can edit [cdk_app.py](cdk_app.py) to set `use_thumbnails=False` before deploying to remove the parallel thumbnailing step from the pipeline. When the pipeline is deployed with the default `use_thumbnails=True`, it will fail unless a thumbnailing endpoint is properly configured (via SSM as shown in [notebook 2](notebooks/2.%20Model%20Training.ipynb)).
+If you know you'll be using the pipeline with LayoutLMv1 models only, you can `export USE_THUMBNAILS=false` before deploying your app (or edit [cdk_app.py](cdk_app.py) to set `use_thumbnails=False`) to remove the parallel thumbnailing step from the pipeline. When the pipeline is deployed with the default `use_thumbnails=True`, it will fail unless a thumbnailing endpoint is properly configured (via SSM as shown in [notebook 2](notebooks/2.%20Model%20Training.ipynb)).
+
+
+### Auto-scaling SageMaker endpoints
+
+If your pipeline will see variable load - *especially* if there will be long periods where no documents are submitted at all - then you might be interested to optimise resource use and cost by enabling infrastructure auto-scaling on deployed SageMaker endpoints.
+
+Scaling down to 0 instances during idle periods is [supported](https://docs.aws.amazon.com/sagemaker/latest/dg/async-inference-autoscale.html) by the asynchronous endpoints we use in this example - but there's a trade-off: You may see a cold-start delay of several minutes when a document arrives and no instances were already active.
+
+For endpoints automatically deployed by the CDK app, you can control whether auto-scaling is set up via the `ENABLE_SM_AUTOSCALING` environment variable or the `enable_sagemaker_autoscaling` argument in [cdk_app.py](cdk_app.py). For instructions to set up auto-scaling on your manually-created endpoints, see [notebooks/Optional Extras.ipynb](notebooks/Optional%20Extras.ipynb).
 
 
 ### Handling large documents (or optimizing for small ones)
@@ -95,7 +112,7 @@ Because some components of the pipeline have configured timeouts or process cons
 
 Consider:
 
-- Increasing the `timeout_excluding_queue` (in [pipeline/ocr/__init__.py TextractOcrStep](pipeline/ocr/__init__.py)) to accommodate the longer Textract processing and Lambda consolidation time (e.g. to 20mins+)
+- Increasing the default `timeout_excluding_queue` (in [pipeline/ocr/textract_ocr.py TextractOCRStep](pipeline/ocr/textract_ocr.py)) to accommodate the longer Textract processing and Lambda consolidation time (e.g. to 20mins+)
 - Increasing the `timeout` and `memory_size` of the `CallTextract` Lambda function in [pipeline/ocr/__init__.py](pipeline/ocr/__init__.py) to accommodate consolidating the large Textract result JSON to a single S3 file (e.g. to 8min, 2048MB)
 - Likewise increasing the `memory_size` of the `PostProcessFn` Lambda function in [pipeline/postprocessing/__init__.py](pipeline/postprocessing/__init__.py), which also loads and processes full document JSON (e.g. to 1024MB or more)
 
@@ -117,6 +134,7 @@ For example you could loop through the rows and cells of detected `TABLE`s in yo
 
 If you need to change the output format for the post-processing Lambda function, note that the A2I human review template will likely also need to be updated.
 
+---
 
 ## Customizing the models
 

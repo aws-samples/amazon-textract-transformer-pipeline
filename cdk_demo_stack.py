@@ -41,6 +41,7 @@ class PipelineDemoStack(Stack):
         construct_id: str,
         default_project_id: str,
         use_thumbnails: bool,
+        enable_sagemaker_autoscaling: bool = False,
         **kwargs,
     ) -> None:
         """Create a PipelineDemoStack
@@ -63,6 +64,12 @@ class PipelineDemoStack(Stack):
             `use_thumbnails=True` will fail if a thumbnailer endpoint is not set up (see SageMaker
             notebooks). Pipelines deployed with `use_thumbnails=False` cannot fully utilize model
             architectures that use page images for inference (such as LayoutLMv2+, etc).
+        enable_sagemaker_autoscaling :
+            Set True to enable auto-scale-to-zero on any SageMaker endpoints created by the stack.
+            Turning this on should improve cost-efficiency for workloads which are often idle, but
+            will introduce cold-start delays to affected stages of the pipeline so may not be ideal
+            during development. This setting does not affect endpoints created *outside* the stack
+            and later plumbed in to the pipeline (i.e. endpoints deployed from notebooks).
         **kwargs :
             As per aws_cdk.Stack
         """
@@ -120,6 +127,7 @@ class PipelineDemoStack(Stack):
             input_bucket=self.input_bucket,
             ssm_param_prefix=f"/{self.project_id_param.value_as_string}/config/",
             use_thumbnails=use_thumbnails,
+            enable_sagemaker_autoscaling=enable_sagemaker_autoscaling,
         )
         self.data_science_policy = ManagedPolicy(
             self,
@@ -233,6 +241,7 @@ class PipelineDemoStack(Stack):
         # able to automatically look up project resources from SageMaker notebooks. To support
         # this, we'll create additional SSM params used just to *retrieve* static attributes of the
         # stack - rather than configuration points like the ProcessingPipeline construct's params.
+        static_param_prefix = f"/{self.project_id_param.value_as_string}/static"
         self.sm_image_build_role_ssm_param = ssm.StringParameter(
             self,
             "SMImageBuildRoleSSMParam",
@@ -240,15 +249,23 @@ class PipelineDemoStack(Stack):
             description=(
                 "Name of the CodeBuild execution role to use in SMStudio Image Build commands"
             ),
-            parameter_name=f"/{self.project_id_param.value_as_string}/static/SMDockerBuildRole",
+            parameter_name=f"{static_param_prefix}/SMDockerBuildRole",
             simple_name=False,
+        )
+        self.preproc_image_param = ssm.StringParameter(
+            self,
+            "PreprocImageSSMParam",
+            description="URI of the thumbnail generator container image pre-created by the stack",
+            parameter_name=f"{static_param_prefix}/PreprocImageURI",
+            simple_name=False,
+            string_value=self.pipeline.preproc_image.image_uri,
         )
         self.input_bucket_ssm_param = ssm.StringParameter(
             self,
             "InputBucketNameSSMParam",
             string_value=self.input_bucket.bucket_name,
             description="Name of the S3 bucket to which input documents should be uploaded",
-            parameter_name=f"/{self.project_id_param.value_as_string}/static/InputBucket",
+            parameter_name=f"{static_param_prefix}/InputBucket",
             simple_name=False,
         )
         self.reviews_bucket_ssm_param = ssm.StringParameter(
@@ -256,7 +273,7 @@ class PipelineDemoStack(Stack):
             "ReviewsBucketNameSSMParam",
             string_value=self.pipeline.human_reviews_bucket.bucket_name,
             description="Name of the S3 bucket to which human reviews should be stored",
-            parameter_name=f"/{self.project_id_param.value_as_string}/static/ReviewsBucket",
+            parameter_name=f"{static_param_prefix}/ReviewsBucket",
             simple_name=False,
         )
         self.pipeline_statemachine_ssm_param = ssm.StringParameter(
@@ -264,9 +281,7 @@ class PipelineDemoStack(Stack):
             "PipelineStateMachineSSMParam",
             string_value=self.pipeline.state_machine.state_machine_arn,
             description="ARN of the State Machine for the end-to-end OCR pipeline",
-            parameter_name=(
-                f"/{self.project_id_param.value_as_string}/static/PipelineStateMachine"
-            ),
+            parameter_name=f"{static_param_prefix}/PipelineStateMachine",
             simple_name=False,
         )
         self.textract_statemachine_ssm_param = ssm.StringParameter(
@@ -285,7 +300,7 @@ class PipelineDemoStack(Stack):
             description=(
                 "Name of the S3 bucket to which SageMaker (async) model results should be stored"
             ),
-            parameter_name=(f"/{self.project_id_param.value_as_string}/static/ModelResultsBucket"),
+            parameter_name=f"{static_param_prefix}/ModelResultsBucket",
             simple_name=False,
             string_value=self.pipeline.enriched_results_bucket.bucket_name,
         )
@@ -293,9 +308,7 @@ class PipelineDemoStack(Stack):
             self,
             "ThumbnailsCallbackTopicSSMParam",
             description="ARN of the SNS Topic to use for thumbnail images generation callback",
-            parameter_name=(
-                f"/{self.project_id_param.value_as_string}/static/ThumbnailsCallbackTopicArn"
-            ),
+            parameter_name=f"{static_param_prefix}/ThumbnailsCallbackTopicArn",
             simple_name=False,
             string_value=(
                 self.pipeline.thumbnail_sns_topic.topic_arn
@@ -307,9 +320,7 @@ class PipelineDemoStack(Stack):
             self,
             "EnrichmentModelCallbackTopicSSMParam",
             description="ARN of the SNS Topic to use for callback in SageMaker Async Inference",
-            parameter_name=(
-                f"/{self.project_id_param.value_as_string}/static/ModelCallbackTopicArn"
-            ),
+            parameter_name=f"{static_param_prefix}/ModelCallbackTopicArn",
             simple_name=False,
             string_value=(
                 self.pipeline.sagemaker_sns_topic.topic_arn
@@ -322,7 +333,7 @@ class PipelineDemoStack(Stack):
             "A2IExecutionRoleArnParam",
             string_value=self.pipeline.review_a2i_role.role_arn,
             description="ARN of the execution role which A2I human review workflows should use",
-            parameter_name=f"/{self.project_id_param.value_as_string}/static/A2IExecutionRoleArn",
+            parameter_name=f"{static_param_prefix}/A2IExecutionRoleArn",
             simple_name=False,
         )
 
@@ -333,6 +344,7 @@ class PipelineDemoStack(Stack):
                     self.input_bucket_ssm_param,
                     self.reviews_bucket_ssm_param,
                     self.pipeline_statemachine_ssm_param,
+                    self.preproc_image_param,
                     self.textract_statemachine_ssm_param,
                     self.thumbnails_callback_topic_ssm_param,
                     self.enrichment_callback_topic_ssm_param,

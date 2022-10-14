@@ -11,7 +11,7 @@ endpoint.
 from typing import List, Optional, Union
 
 # External Dependencies:
-from aws_cdk import Duration, Stack, Token
+from aws_cdk import Duration, Token
 import aws_cdk.aws_iam as iam
 import aws_cdk.aws_s3 as s3
 from aws_cdk.aws_sns import ITopic, Topic
@@ -22,6 +22,8 @@ from constructs import Construct
 # Local Dependencies:
 from ..shared import abs_path
 from ..shared.sagemaker import (
+    EndpointAutoscaler,
+    get_sagemaker_default_bucket,
     SageMakerAsyncInferenceConfig,
     SageMakerCallerFunction,
     SageMakerSSMStep,
@@ -38,15 +40,16 @@ class ThumbnailGeneratorDeployment(Construct):
         self,
         scope: Construct,
         id: str,
-        thumbnailer_name: str,
         image: SageMakerDLCBasedImage,
         s3_input_bucket: s3.Bucket,
         s3_output_bucket: s3.Bucket,
         s3_input_prefix: Optional[str] = None,
         s3_output_prefix: str = "",
+        enable_autoscaling: bool = False,
         execution_role: Optional[iam.IRole] = None,
         sns_success_topic: Optional[ITopic] = None,
         sns_error_topic: Optional[ITopic] = None,
+        thumbnailer_name: Optional[str] = None,
     ):
         """Create a ThumbnailGeneratorDeployment
 
@@ -56,8 +59,6 @@ class ThumbnailGeneratorDeployment(Construct):
             As per CDK Construct parent.
         id :
             As per CDK Construct parent.
-        thumbnailer_name :
-            Name to use for SageMaker Model/Endpoint/EndpointConfig
         image :
             Pre-staged SageMakerDLCBasedImage that the SageMaker Model/Endpoint should use.
         s3_input_bucket :
@@ -70,6 +71,9 @@ class ThumbnailGeneratorDeployment(Construct):
         s3_output_prefix :
             Prefix under `s3_output_bucket` in which thumbnail outputs should be stored (for SM
             Async Inference)
+        enable_autoscaling :
+            Set True to enable auto-scaling on the endpoint to optimize resource usage (recommended
+            for production use), or False to disable it and avoid cold-starts (good for development)
         execution_role :
             Optional pre-created IAM role to use for SageMaker model deployment. If not provided, a
             new role will be created.
@@ -77,6 +81,8 @@ class ThumbnailGeneratorDeployment(Construct):
             SNS Topic to notify on successful inference (for SM Async Inference)
         sns_error_topic :
             SNS Topic to notify on failed inference (for SM Async Inference)
+        thumbnailer_name :
+            Optional explicit name to use for SageMaker Model/Endpoint/EndpointConfig
         """
         super().__init__(scope, id)
 
@@ -96,13 +102,8 @@ class ThumbnailGeneratorDeployment(Construct):
             self.execution_role,
             s3_input_prefix + "*" if s3_input_prefix else None,
         )
-
         # Also grant SageMaker default bucket access to the thumbnailer, for in-notebook testing:
-        s3.Bucket.from_bucket_arn(
-            self,
-            "SageMakerDefaultBucket",
-            f"arn:aws:s3:::sagemaker-{Stack.of(self).region}-{Stack.of(self).account}",
-        ).grant_read_write(self.execution_role)
+        get_sagemaker_default_bucket(self).grant_read_write(self.execution_role)
 
         self.model = SageMakerCustomizedDLCModel(
             self,
@@ -110,7 +111,7 @@ class ThumbnailGeneratorDeployment(Construct):
             model_name=thumbnailer_name,
             image=self.image,
             execution_role=self.execution_role,
-            entry_point="inference.py",
+            entry_point="preproc.py",
             source_dir=abs_path("../../notebooks/preproc", __file__),
         )
 
@@ -130,9 +131,21 @@ class ThumbnailGeneratorDeployment(Construct):
             ),
         )
 
+        if enable_autoscaling:
+            self.autoscaler = EndpointAutoscaler(
+                self,
+                "AutoScaler",
+                max_capacity=4,
+                min_capacity=0,
+                endpoint_name=self.deployment.endpoint_name,
+            )
+            self.autoscaler.scale_async_endpoint_simple()
+        else:
+            self.autoscaler = None
+
     @property
     def endpoint_name(self) -> str:
-        return self.deployment.endpoint.endpoint_name
+        return self.deployment.endpoint_name
 
 
 class GenerateThumbnailsStep(Construct):
@@ -158,6 +171,7 @@ class GenerateThumbnailsStep(Construct):
         thumbnails_prefix: str = "",
         auto_deploy_thumbnailer: bool = False,
         container_image: Optional[SageMakerDLCBasedImage] = None,
+        enable_autoscaling: bool = False,
         shared_sagemaker_caller_lambda: Optional[SageMakerCallerFunction] = None,
         **kwargs,
     ):
@@ -197,6 +211,10 @@ class GenerateThumbnailsStep(Construct):
             Pre-staged SageMakerDLCBasedImage that the thumbnailer step's SageMaker Model/Endpoint
             should use if auto-deployment of the endpoint is enabled. Required if deployment is
             enabled.
+        enable_autoscaling:
+            Set `True` to enable auto-scale-to-zero on the SageMaker endpoint if deployed.
+            Turning this on should improve cost-efficiency for workloads which are often idle, but
+            will introduce cold-start delays so may not be ideal during development.
         shared_sagemaker_caller_lambda :
             Optional pre-existing SageMaker caller Lambda function, to share this between multiple
             SageMakerSSMSteps in the app if required.
@@ -214,12 +232,12 @@ class GenerateThumbnailsStep(Construct):
             self.deployment = ThumbnailGeneratorDeployment(
                 self,
                 "Thumbnailer",
-                thumbnailer_name="ocr-thumbnail-cdk",
                 image=container_image,
                 s3_input_bucket=input_bucket,
                 s3_output_bucket=thumbnails_bucket,
                 s3_input_prefix=input_prefix,
                 s3_output_prefix=thumbnails_prefix,
+                enable_autoscaling=enable_autoscaling,
                 sns_success_topic=async_callback_topic,
                 sns_error_topic=async_callback_topic,
             )
@@ -273,8 +291,8 @@ class GenerateThumbnailsStep(Construct):
     ) -> List[iam.PolicyStatement]:
         """Create PolicyStatements to grant SageMaker permission to use the SNS callback topic
 
-        Arguments
-        ---------
+        Parameters
+        ----------
         sid_prefix : str | None
             Prefix to add to generated statement IDs for uniqueness, or "", or None to suppress
             SIDs.
