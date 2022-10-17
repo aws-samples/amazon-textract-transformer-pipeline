@@ -279,6 +279,7 @@ class ModelTarballAsset(s3assets.Asset):
     Nests the source folder under a 'code/' prefix in the output tarball, for consistency with
     PyTorch and HuggingFace framework container expectations.
     """
+
     def __init__(
         self,
         scope: Construct,
@@ -318,6 +319,7 @@ class SageMakerEndpointExecutionRole(iam.Role):
     This class automatically sets up a default inline policy granting permissions to store logs and
     metrics, as well as pull access to ECR repositories you specify.
     """
+
     def __init__(
         self,
         scope: Construct,
@@ -336,7 +338,7 @@ class SageMakerEndpointExecutionRole(iam.Role):
         """Create a SageMakerEndpointExecutionRole
 
         Parameters as per aws_iam.Role except where explicitly specified.
-        
+
         Parameters
         ----------
         ecr_repositories :
@@ -416,7 +418,7 @@ class SageMakerEndpointExecutionRole(iam.Role):
         self._default_policy = default_policy
         self._ecr_read_statement = ecr_read_statement
         self._s3_read_statement = s3_read_statement
-    
+
     def add_ecr_repo(self, repository: ecr.Repository) -> None:
         """Add permission to pull images from the given repo to this role's inline policy"""
         self._ecr_read_statement.add_resources(repository.repository_arn)

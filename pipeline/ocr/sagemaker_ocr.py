@@ -35,7 +35,7 @@ from ..shared.sagemaker import (
 @dataclass
 class CustomOCREngineSpec:
     """Data class for configuring a custom OCR engine integration
-    
+
     Parameters
     ----------
     base_dlc :
@@ -182,6 +182,8 @@ class SageMakerOCRStep(Construct):
                 raise ValueError(
                     f"deploy_engine_names must all be present in build_engine_names. Got: '{name}'"
                 )
+        if use_engine_name == "":
+            use_engine_name = None
         if use_engine_name is not None and use_engine_name not in deploy_engine_names:
             raise ValueError(
                 f"use_engine_name '{use_engine_name}' must be in deploy list {deploy_engine_names}"

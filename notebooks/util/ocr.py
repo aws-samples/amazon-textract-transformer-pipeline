@@ -484,7 +484,7 @@ def call_textract(
 
 def describe_sagemaker_ocr_model(engine_name: str) -> dict:
     """Look up a SageMaker OCR model created by the solution CDK stack by OCR engine name
-    
+
     Returns
     -------
     result :
@@ -496,7 +496,8 @@ def describe_sagemaker_ocr_model(engine_name: str) -> dict:
         If no matching models could be found in SageMaker
     """
     candidate_arns = [
-        obj["ResourceARN"] for obj in tagging.get_resources(
+        obj["ResourceARN"]
+        for obj in tagging.get_resources(
             TagFilters=[
                 {
                     "Key": "OCREngineName",
@@ -512,8 +513,7 @@ def describe_sagemaker_ocr_model(engine_name: str) -> dict:
         raise ValueError(
             "Couldn't find any SageMaker models with tag 'OCREngineName' = '%s'. Check your CDK "
             "solution deployed with BUILD_SM_OCR including this engine, or locate your intended "
-            "OCR model by hand."
-            % (engine_name,)
+            "OCR model by hand." % (engine_name,)
         )
     elif n_candidates > 1:
         logger.warning(
@@ -525,4 +525,3 @@ def describe_sagemaker_ocr_model(engine_name: str) -> dict:
 
     model_name = candidate_arns[0].partition("/")[2]
     return smclient.describe_model(ModelName=model_name)
-    

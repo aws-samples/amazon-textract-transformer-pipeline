@@ -20,6 +20,14 @@ def s3uri_to_bucket_and_key(s3uri: str) -> Tuple[str, str]:
     return bucket, key
 
 
+def s3uri_to_relative_path(s3uri: str, key_base: str) -> str:
+    """Extract e.g. 'subfolders/file' from 's3://bucket/.../{key_base}subfolders/file'
+
+    If `key_base` is a folder, it should typically include a trailing slash.
+    """
+    return s3uri[len("s3://") :].partition("/")[2].partition(key_base)[2]
+
+
 def s3_object_exists(bucket_name_or_s3uri: str, key: Optional[str] = None) -> bool:
     """Check if an object exists in Amazon S3
 

@@ -6,8 +6,10 @@
 from __future__ import annotations
 import json
 from logging import getLogger
+import os
+from random import Random
 import re
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Set, TextIO, Tuple, Union
 
 # External Dependencies:
 import boto3
@@ -16,7 +18,7 @@ from tqdm.notebook import tqdm  # Progress bars
 import trp  # Amazon Textract Response Parser
 
 # Local Dependencies:
-from .s3 import s3_object_exists, s3uri_to_bucket_and_key
+from .s3 import s3_object_exists, s3uri_to_bucket_and_key, s3uri_to_relative_path
 
 
 logger = getLogger("preproc")
@@ -56,7 +58,7 @@ class DummyFramework(Framework):
 
     def create_model(self, **kwargs):
         """Dummy implementation - raises NotImplementedError if called
-        
+
         This method must be implemented to allow instantiating the abstract parent class, but it's
         not needed for our intended use (running framework-agnostic processing jobs).
         """
@@ -386,3 +388,177 @@ def collate_data_manifest(
                     record["pages-have-content"] = pages_have_content
                 fmanifest.write(json.dumps(record) + "\n")
     return warnings
+
+
+def list_preannotated_img_paths(
+    annotations_folder: str = "data/annotations",
+    exclude_job_names: List[str] = [],
+    key_prefix: str = "data/imgs-clean/",
+) -> Set[str]:
+    """Find the set of relative image paths that have already been annotated"""
+    filepaths = set()  # Protect against introducing duplicates
+    for job_folder in os.listdir(annotations_folder):
+        if job_folder in exclude_job_names:
+            logger.info(f"Skipping excluded job {job_folder}")
+            continue
+        manifest_file = os.path.join(
+            "data",
+            "annotations",
+            job_folder,
+            "manifests",
+            "output",
+            "output.manifest",
+        )
+        if not os.path.isfile(manifest_file):
+            if os.path.isdir(os.path.join(annotations_folder, job_folder)):
+                logger.warning(f"Skipping job {job_folder}: No output manifest at {manifest_file}")
+            continue
+        with open(manifest_file, "r") as f:
+            filepaths.update(
+                [
+                    s3uri_to_relative_path(json.loads(line)["source-ref"], key_base=key_prefix)
+                    for line in f
+                ]
+            )
+    return filepaths
+
+
+def stratified_sample_first_page_examples(
+    input_manifest_path: str,
+    n_examples: int,
+    pct_first_page: float = 0.4,
+    exclude_source_ref_uris: Set[str] = set(),
+    random_seed: int = 1337,
+) -> List[dict]:
+    """Sample manifest examples, stratifying to a particular % of records with page-num 1
+
+    Parameters
+    ----------
+    input_manifest_path :
+        Input manifest file which should have at least keys "page-num" (1-based number) and
+        "source-ref" (s3://... URI) on each record.
+    n_examples :
+        Number of examples to draw for the output.
+    pct_first_page :
+        Percentage (ratio in range 0-1) of output examples which should have page-num = 1.
+    exclude_source_ref_uris :
+        Set of "source-ref" values to be excluded (i.e. already-annotated images).
+    random_seed :
+        Random number generator initialization for reproducible draws.
+    """
+    with open(input_manifest_path, "r") as fmanifest:
+        examples_all = [json.loads(line) for line in fmanifest]
+
+    # Separate and shuffle the first vs non-first pages:
+    examples_all_arefirsts = [item["page-num"] == 1 for item in examples_all]
+
+    examples_firsts = [e for ix, e in enumerate(examples_all) if examples_all_arefirsts[ix]]
+    examples_nonfirsts = [e for ix, e in enumerate(examples_all) if not examples_all_arefirsts[ix]]
+    Random(random_seed).shuffle(examples_firsts)
+    Random(random_seed).shuffle(examples_nonfirsts)
+
+    # Exclude already-annotated images:
+    filtered_firsts = [e for e in examples_firsts if e["source-ref"] not in exclude_source_ref_uris]
+    filtered_nonfirsts = [
+        e for e in examples_nonfirsts if e["source-ref"] not in exclude_source_ref_uris
+    ]
+    logger.info(
+        "Excluded %s first and %s non-first pages"
+        % (
+            len(examples_firsts) - len(filtered_firsts),
+            len(examples_nonfirsts) - len(filtered_nonfirsts),
+        )
+    )
+
+    # Draw from the filtered shuffled lists:
+    n_first_pages = round(pct_first_page * n_examples)
+    n_nonfirst_pages = n_examples - n_first_pages
+    if n_first_pages > len(filtered_firsts):
+        raise ValueError(
+            "Unable to find enough first-page records to build manifest: Wanted "
+            "%s, but only %s available from list after exclusions (%s before)"
+            % (n_first_pages, len(filtered_firsts), len(examples_firsts))
+        )
+    if n_nonfirst_pages > len(filtered_nonfirsts):
+        raise ValueError(
+            "Unable to find enough non-first-page records to build manifest: Wanted "
+            "%s, but only %s available from list after exclusions (%s before)"
+            % (n_nonfirst_pages, len(filtered_nonfirsts), len(examples_nonfirsts))
+        )
+    print(f"Taking {n_first_pages} first pages and {n_nonfirst_pages} non-first pages.")
+    selected = filtered_firsts[:n_first_pages] + filtered_nonfirsts[:n_nonfirst_pages]
+    Random(random_seed).shuffle(selected)  # Shuffle again to avoid putting all 1stP at front
+    return selected
+
+
+def consolidate_data_manifests(
+    source_manifests: List[dict],
+    output_manifest: TextIO,
+    standard_label_field: str,
+    bucket_mappings: Dict[str, str],
+    prefix_mappings: Dict[str, str],
+) -> None:
+    """Consolidate multiple SM Ground Truth manifest files, normalizing label names and S3 URIs
+
+    This function applies the following normalizations, which are often needed when combining
+    multiple SageMaker Ground Truth manifests together into one:
+    - If the jobs were created through the AWS Console with default settings, their output (labels)
+        field will likely be set to the job name. A combined manifest will need to standardize
+        labels to a single field name so all the records match.
+    - If the jobs were created in a different AWS Account or environment, their S3 URIs may
+        reference buckets and key prefixes that aren't accessible for us but are mirrored in our
+        own environment. A combined manifest will need to map these S3 URIs to the current env.
+
+    Parameters
+    ----------
+    source_manifests :
+        List of {job_name, manifest_path} entries pointing to SageMaker Ground Truth output manifest
+        files and linking them to the job names.
+    output_manifest :
+        Open file handle (i.e. via `open()`) for the consolidated manifest file to be written.
+    standard_label_field :
+        Name of the standardized label field to use in the output.
+    bucket_mappings :
+        Mappings from {original: replacement} S3 bucket names to replace in source manifests.
+    prefix_mappings :
+        Mappings from {original: replacement} S3 key prefixes to replace in source manifests.
+    """
+    for source in tqdm(source_manifests, desc="Consolidating manifests..."):
+        job_name = source["job_name"]
+        manifest_path = source["manifest_path"]
+        with open(manifest_path, "r") as fin:
+            for line in filter(lambda l: l, fin):
+                obj: dict = json.loads(line)
+
+                # Import refs by applying BUCKET_MAPPINGS and PREFIX_MAPPINGS:
+                for k in filter(lambda k: k.endswith("-ref"), obj.keys()):
+                    if not obj[k].lower().startswith("s3://"):
+                        raise RuntimeError(
+                            "Attr %s ends with -ref but does not start with 's3://'\n%s" % (k, obj)
+                        )
+                    obj_bucket, obj_key = s3uri_to_bucket_and_key(obj[k])
+                    obj_bucket = bucket_mappings.get(obj_bucket, obj_bucket)
+                    for old_prefix in prefix_mappings:
+                        if obj_key.startswith(old_prefix):
+                            obj_key = prefix_mappings[old_prefix] + obj_key[len(old_prefix) :]
+                    obj[k] = f"s3://{obj_bucket}/{obj_key}"
+
+                # Find the job output field:
+                if job_name in obj:
+                    source_label_attr = job_name
+                elif standard_label_field in obj:
+                    source_label_attr = standard_label_field
+                else:
+                    raise RuntimeError(
+                        "Couldn't find label field for entry in {}:\n{}".format(
+                            job_name,
+                            obj,
+                        )
+                    )
+                # Rename to standard:
+                obj[standard_label_field] = obj.pop(source_label_attr)
+                source_meta_attr = f"{source_label_attr}-metadata"
+                if source_meta_attr in obj:
+                    obj[f"{standard_label_field}-metadata"] = obj.pop(source_meta_attr)
+                # Write to output manifest:
+                output_manifest.write(json.dumps(obj) + "\n")
