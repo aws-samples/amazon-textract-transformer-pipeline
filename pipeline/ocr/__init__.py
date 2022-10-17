@@ -1,50 +1,52 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""CDK for core OCR (Amazon Textract) stage of the OCR pipeline
+"""CDK for OCR stage of the document processing pipeline
 """
+# Python Built-Ins:
+from typing import List, Optional, Union
+
 # External Dependencies:
-from aws_cdk import Duration, RemovalPolicy
-import aws_cdk.aws_dynamodb as dynamodb
-from aws_cdk.aws_iam import Effect, PolicyDocument, PolicyStatement, Role, ServicePrincipal
-from aws_cdk.aws_lambda import Runtime as LambdaRuntime
-from aws_cdk.aws_lambda_python_alpha import PythonFunction
+from aws_cdk import Token
+import aws_cdk.aws_iam as iam
 from aws_cdk.aws_s3 import Bucket
-import aws_cdk.aws_sns as sns
-import aws_cdk.aws_sns_subscriptions as subs
-import aws_cdk.aws_stepfunctions as sfn
-import aws_cdk.aws_stepfunctions_tasks as sfn_tasks
 from constructs import Construct
 
 # Local Dependencies:
-from . import sfn_semaphore
-from ..shared import abs_path
+from .sagemaker_ocr import SageMakerOCRStep
+from .textract_ocr import TextractOCRStep
+from ..shared.sagemaker import SageMakerCallerFunction
 
 
-TEXTRACT_LAMBDA_PATH = abs_path("fn-call-textract", __file__)
-
-
-class TextractOcrStep(Construct):
-    """CDK Construct for a concurrency- & TPS-limiting Textract OCR step in a Step Function
+class OCRStep(Construct):
+    """CDK construct for a document pipeline step to OCR incoming documents/images
 
     This construct's `.sfn_task` expects inputs with $.Input.Bucket and $.Input.Key properties
     specifying the location of the raw input document, and will return an object with Bucket and
-    Key pointing to the consolidated Textract JSON object.
+    Key pointing to a consolidated JSON OCR output in Amazon Textract-compatible format.
+
+    In addition to the standard (Amazon Textract-based) option, this construct supports building
+    and deploying alternative, custom OCR options. Multiple engines may be built and/or deployed (to
+    support experimentation), but the pipeline must be pointed to exactly one custom SageMaker or
+    Amazon Textract OCR provider.
     """
 
     def __init__(
         self,
         scope: Construct,
         id: str,
-        lambda_role: Role,
+        lambda_role: iam.Role,
+        ssm_param_prefix: Union[Token, str],
+        input_bucket: Bucket,
         output_bucket: Bucket,
         output_prefix: str,
-        concurrency_limit: int = 90,
-        warmup_tps_limit: float = 2,
-        timeout_excluding_queue: Duration = Duration.minutes(25),
-        timeout_including_queue: Duration = Duration.minutes(30),
-        **kwargs,
+        input_prefix: Optional[str] = None,
+        build_sm_ocr: List[str] = [],
+        deploy_sm_ocr: List[str] = [],
+        use_sm_ocr: Optional[str] = None,
+        enable_sagemaker_autoscaling: bool = False,
+        shared_sagemaker_caller_lambda: Optional[SageMakerCallerFunction] = None,
     ):
-        """Create a TextractOcrStep
+        """Create an OCRStep
 
         Parameters
         ----------
@@ -53,182 +55,77 @@ class TextractOcrStep(Construct):
         id :
             CDK construct ID
         lambda_role :
-            IAM Role that the Textract-invoking Lambda function will run with
+            IAM Role that the Amazon Textract-invoking Lambda function will run with
+        ssm_param_prefix :
+            Prefix to be applied to generated SSM pipeline configuration parameter names (including
+            the parameter to configure SageMaker endpoint name for thumbnail generation).
+        input_bucket :
+            Bucket from which input documents will be fetched. If auto-deployment of a thumbnailer
+            endpoint is enabled, the model execution role will be granted access to this bucket
+            (limited to `input_prefix`).
         output_bucket :
             (Pre-existing) S3 bucket where Textract result files should be stored
         output_prefix :
             Prefix under which Textract result files should be stored in S3 (under this prefix,
             the original input document keys will be mapped).
-        concurrency_limit :
-            Maximum number of Textract jobs which may be in-progress at a time. Additional requests
-            will be pooled for retry via AWS Step Functions (order not guaranteed). Refer to your
-            account & region's Amazon Textract quotas to set, and consider reducing a margin in
-            case your usage is limited more in practice by the rate of result-fetching Get*** APIs
-            than the total job concurrency limit.
-        warmup_tps_limit :
-            Limit on maximum rate of new Textract job creation. Additional requests will be pooled
-            for retry via AWS Step Functions (order not guaranteed). Refer to your account &
-            region's Amazon Textract Quotas.
-        timeout_excluding_queue :
-            Timeout for the Textract processing job itself to be considered as failed.
-        timeout_including_queue :
-            Timeout for the end-to-end step (including concurrency management / queuing) to be
-            considered as failed.
+        input_prefix :
+            Prefix under `input_bucket` from which input documents will be fetched. Used to
+            configure SageMaker model execution role permissions when auto-deployment of thumbnailer
+            endpoint is enabled.
+        build_sm_ocr :
+            List of alternative (SageMaker-based) OCR engine names to build container images and
+            SageMaker Models for in the deployed stack. By default ([]), none will be included. See
+            `CUSTOM_OCR_ENGINES` in pipeline/ocr/sagemaker_ocr.py for supported engines.
+        deploy_sm_ocr :
+            List of alternative OCR engine names to deploy SageMaker endpoints for in the stack. Any
+            names in here must also be included in `build_sagemaker_ocr`. Default []: Support Amazon
+            Textract OCR only.
+        use_sm_ocr :
+            Optional alternative OCR engine name to use in the deployed document pipeline. If set,
+            this must also be present in `build_sagemaker_ocr` and `deploy_sagemaker_ocr`. Default
+            None: Use Amazon Textract for initial document OCR.
+        enable_sagemaker_autoscaling :
+            Set True to enable auto-scaling on SageMaker OCR endpoints (if any are deployed), to
+            optimize resource usage (recommended for production use). Set False to disable it and
+            avoid cold-starts (good for development).
+        shared_sagemaker_caller_lambda :
+            Optional pre-existing SageMaker caller Lambda function, to share this between multiple
+            SageMakerSSMSteps in the app if required.
         """
-        super().__init__(scope, id, **kwargs)
+        super().__init__(scope, id)
 
-        lambda_role.add_to_policy(
-            PolicyStatement(
-                sid="CallTextract",
-                actions=[
-                    "textract:AnalyzeDocument",
-                    "textract:DetectDocumentText",
-                    "textract:GetDocumentAnalysis",
-                    "textract:GetDocumentTextDetection",
-                    "textract:StartDocumentAnalysis",
-                    "textract:StartDocumentTextDetection",
-                ],
-                effect=Effect.ALLOW,
-                resources=["*"],
+        if len(build_sm_ocr) > 0:
+            self.sagemaker_step = SageMakerOCRStep(
+                self,
+                "SageMakerStep",
+                lambda_role=lambda_role,
+                ssm_param_prefix=ssm_param_prefix,
+                input_bucket=input_bucket,
+                ocr_results_bucket=output_bucket,
+                input_prefix=input_prefix,
+                ocr_results_prefix=output_prefix,
+                build_engine_names=build_sm_ocr,
+                deploy_engine_names=deploy_sm_ocr,
+                use_engine_name=use_sm_ocr,
+                enable_autoscaling=enable_sagemaker_autoscaling,
+                shared_sagemaker_caller_lambda=shared_sagemaker_caller_lambda,
             )
-        )
-        self.ddb_table = dynamodb.Table(
-            self,
-            "TextractAsyncStateCacheTable",
-            partition_key=dynamodb.Attribute(
-                name="TextractJobId",
-                type=dynamodb.AttributeType.STRING,
-            ),
-            removal_policy=RemovalPolicy.DESTROY,
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            time_to_live_attribute="ExpiresAt",
-        )
-        lambda_role.add_to_policy(
-            PolicyStatement(
-                sid="DDBAsyncStateCacheTableAccess",
-                actions=["dynamodb:GetItem", "dynamodb:PutItem"],
-                effect=Effect.ALLOW,
-                resources=[self.ddb_table.table_arn],
-            )
-        )
-        self.sns_topic = sns.Topic(self, "TextractCallbackTopic")
-        self.textract_sns_role = Role(
-            self,
-            "TextractSNSRole",
-            description="Execution role to give Textract permission to notify our SNS topic",
-            assumed_by=ServicePrincipal("textract.amazonaws.com"),
-            inline_policies={
-                "SNSAccess": PolicyDocument(
-                    statements=[
-                        PolicyStatement(
-                            sid="SNSTopicAccess",
-                            actions=["sns:Publish"],
-                            effect=Effect.ALLOW,
-                            resources=[self.sns_topic.topic_arn],
-                        ),
-                    ],
-                ),
-            },
-        )
-        lambda_role.add_to_policy(
-            PolicyStatement(
-                sid="PassTextractSNSRole",
-                actions=["iam:PassRole"],
-                effect=Effect.ALLOW,
-                resources=[self.textract_sns_role.role_arn],
-            )
-        )
-        self.caller_lambda = PythonFunction(
-            self,
-            "CallTextract",
-            entry=TEXTRACT_LAMBDA_PATH,
-            environment={
-                "CALLBACK_SNS_ROLE_ARN": self.textract_sns_role.role_arn,
-                "CALLBACK_SNS_TOPIC_ARN": self.sns_topic.topic_arn,
-                "DDB_STATE_CACHE_TABLE": self.ddb_table.table_name,
-            },
-            index="main.py",
-            handler="handler",
-            memory_size=1024,
-            role=lambda_role,
-            runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=Duration.minutes(3),
-        )
-        self.sns_topic.add_subscription(subs.LambdaSubscription(self.caller_lambda))
+        else:
+            self.sagemaker_step = None
 
-        self.inner_textact_step = sfn_tasks.LambdaInvoke(
+        self.textract_step = TextractOCRStep(
             self,
-            "TextractLambdaStep",
-            comment="Extract document text and structure with Amazon Textract",
-            lambda_function=self.caller_lambda,
-            payload=sfn.TaskInput.from_object(
-                {
-                    "IdempotencySalt": sfn.JsonPath.task_token,
-                    "Input": sfn.JsonPath.string_at("$.Input"),
-                    "Output": sfn.JsonPath.string_at("$.Output"),
-                    "TaskToken": sfn.JsonPath.task_token,
-                }
-            ),
-            result_path="$.Output",  # Overwrite 'Output'
-            integration_pattern=sfn.IntegrationPattern.WAIT_FOR_TASK_TOKEN,
-            timeout=timeout_excluding_queue,
+            "TextractStep",
+            lambda_role=lambda_role,
+            output_bucket=output_bucket,
+            output_prefix=output_prefix,
         )
 
-        # We'll use a Step Function semaphore construct to manage concurrency and TPS for Textract,
-        # from the sfn_semaphore folder. While in general it might be nice to share the semaphore
-        # DB table and reaper machine between semaphores, this CDK app only uses this one lock.
-        # Therefore we'll just init everything here and not over-complicate this construct's API:
-        global_lock_name = "TextractConcurrencyLock"  # Could consider: cdk.Names.unique_id(self)
-        self.semaphore_ddb = sfn_semaphore.SFnSemaphoreDynamoDbTable(
-            self,
-            "TextractSemaphoreDDB",
-            lock_id_attr="LockName",
-        )
-        self.semaphore_reaper = sfn_semaphore.SFnSemaphoreReaper(
-            self,
-            "TextractSemaphoreReaper",
-            ddb_lock_table=self.semaphore_ddb,
-            lock_id_attr=self.semaphore_ddb.lock_id_attr,
-        )
-        self.semaphore = sfn_semaphore.SFnSemaphore(
-            self,
-            "TextractSemaphore",
-            workchain=self.inner_textact_step,
-            ddb_lock_table=self.semaphore_ddb,
-            lock_id_attr=self.semaphore_ddb.lock_id_attr,
-            lock_name=global_lock_name,
-            concurrency_limit=concurrency_limit,
-            warmup_tps_limit=warmup_tps_limit,
-        )
-        self.textract_state_machine = sfn.StateMachine(
-            self,
-            "TextractStateMachine",
-            definition=self.semaphore.chain,
-            timeout=timeout_including_queue,
-        )
-        self.semaphore_reaper.attach(self.textract_state_machine, lock_name=global_lock_name)
+        if use_sm_ocr and self.sagemaker_step:
+            self.sfn_task = self.sagemaker_step.sfn_task
+        else:
+            self.sfn_task = self.textract_step.sfn_task
 
-        # This inner, semaphore-wrapped state machine will be the task as seen by the OCR pipeline:
-        self.sfn_task = sfn_tasks.StepFunctionsStartExecution(
-            self,
-            "TextractTask",
-            comment="Extract document text and structure with Amazon Textract",
-            state_machine=self.textract_state_machine,
-            input=sfn.TaskInput.from_object(
-                {
-                    "Input": {
-                        "Bucket": sfn.JsonPath.string_at("$.Input.Bucket"),
-                        "Key": sfn.JsonPath.string_at("$.Input.Key"),
-                    },
-                    "Output": {
-                        "Bucket": output_bucket.bucket_name,
-                        "Prefix": output_prefix,
-                    },
-                }
-            ),
-            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
-            timeout=timeout_including_queue,
-            # We overwrite the entire SFN state here because this step is used in a Parallel with
-            # thumbnail generation:
-            output_path=sfn.JsonPath.string_at("$.Output.Output"),
-        )
+    @property
+    def textract_state_machine(self):
+        return self.textract_step.textract_state_machine

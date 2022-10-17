@@ -8,6 +8,9 @@ from numbers import Real
 from typing import Any, Dict, Iterable, Optional, Type
 
 
+EPSILON = 1e-15
+
+
 class UniversalBox:
     """Box class with forgiving/flexible constructor(s) and useful props/serialization options
 
@@ -74,7 +77,7 @@ class UniversalBox:
         expected_height = (self._bottom - self._top) if inverted_y else (self._top - self._bottom)
         if self._height is None:
             self._height = expected_height
-        elif self._height != expected_height:
+        elif abs(self._height - expected_height) > EPSILON:
             raise ValueError(
                 "Specified height {} does not match specified top {} and bottom {}".format(
                     self._height,
@@ -97,7 +100,7 @@ class UniversalBox:
         expected_width = self._right - self._left
         if self._width is None:
             self._width = expected_width
-        elif self._width != expected_width:
+        elif abs(self._width - expected_width) > EPSILON:
             raise ValueError(
                 "Specified width {} does not match specified right {} - left {} = {}".format(
                     self._width,

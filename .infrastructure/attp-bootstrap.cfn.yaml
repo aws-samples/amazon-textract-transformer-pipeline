@@ -13,7 +13,72 @@ Parameters:
   CodeRepo:
     Type: String
     Default: https://github.com/aws-samples/amazon-textract-transformer-pipeline
-    Description: URL of the public git repository to use
+    Description: URL of the public git repository to use.
+
+  CodeRepoBranch:
+    Type: String
+    Default: main
+    Description: Branch (or commit hash) of the repository to deploy from.
+
+  ProjectId:
+    Type: String
+    Default: ocr-transformers-demo
+    Description: |-
+      Prefix for created SSM parameters, and ID with which users can look up the deployed pipeline
+      from notebooks. Alphanumeric with internal hyphens allowed.
+    AllowedPattern: '[a-zA-Z](-?[a-zA-Z0-9])*'
+
+  UseThumbnails:
+    Type: String
+    Default: Yes
+    Description: |-
+      When 'Yes', the pipeline generates page image thumbnails for incoming documents and passes
+      these through to SageMaker enrichment model - which improves accuracy with models that
+      consume page images, but is not necessary for those that don't. Set 'No' to disable this if
+      you'll ONLY be working with layout-only model architectures (e.g. LayoutLMv1).
+    AllowedValues:
+      - Yes
+      - No
+
+  BuildSageMakerOCRs:
+    Type: String
+    Default: ''
+    Description: |-
+      Comma-separated list of alternative OCR engine names for which SageMaker container images
+      should be prepared. Currently only 'tesseract' is supported.
+
+  DeploySageMakerOCRs:
+    Type: String
+    Default: ''
+    Description: |-
+      Comma-separated list of alternative OCR engine names for which SageMaker endpoints should be
+      actually deployed. Any names in here MUST also be included in BuildSageMakerOCRs.
+
+  UseSageMakerOCR:
+    Type: String
+    Default: ''
+    Description: |-
+      Optionally set ONE open-source OCR engine name to be actually used by the deployed pipeline
+      instead of Amazon Textract. This may be useful if you need to read docs in languages not
+      currently supported by the Amazon Textract service.
+    AllowedValues:
+      - ''
+      - tesseract
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Pipeline Setup
+        Parameters:
+          - ProjectId
+          - UseThumbnails
+      - Label:
+          default: OCR Alternatives
+        Parameters:
+          - BuildSageMakerOCRs
+          - DeploySageMakerOCRs
+          - UseSageMakerOCR
 
 Resources:
   CodeBuildServiceRole:
@@ -68,6 +133,24 @@ Resources:
           - Name: PUBLIC_REPO
             Type: PLAINTEXT
             Value: !Ref CodeRepo
+          - Name: PUBLIC_REPO_BRANCH
+            Type: PLAINTEXT
+            Value: !Ref CodeRepoBranch
+          - Name: DEFAULT_PROJECT_ID
+            Type: PLAINTEXT
+            Value: !Ref ProjectId
+          - Name: USE_THUMBNAILS
+            Type: PLAINTEXT
+            Value: !Ref UseThumbnails
+          - Name: BUILD_SM_OCR
+            Type: PLAINTEXT
+            Value: !Ref BuildSageMakerOCRs
+          - Name: DEPLOY_SM_OCR
+            Type: PLAINTEXT
+            Value: !Ref DeploySageMakerOCRs
+          - Name: USE_SM_OCR
+            Type: PLAINTEXT
+            Value: !Ref UseSageMakerOCR
         Image: 'aws/codebuild/standard:5.0'
         ImagePullCredentialsType: CODEBUILD
         PrivilegedMode: true  # Need to build container images within the project
@@ -90,7 +173,7 @@ Resources:
             build:
               commands:
                 - set -ex
-                - git clone --depth 1 $PUBLIC_REPO code
+                - git clone --single-branch -b $PUBLIC_REPO_BRANCH --depth 1 $PUBLIC_REPO code
                 - cd code
                 - poetry install
                 - poetry run cdk bootstrap

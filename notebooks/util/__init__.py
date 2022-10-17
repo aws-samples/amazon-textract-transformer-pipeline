@@ -60,8 +60,10 @@ dictConfig(
 
 # Now import the submodules:
 from . import deployment
+from . import ocr
 from . import preproc
 from . import project
+from . import s3
 from . import smgt
 from . import training
 from . import uid

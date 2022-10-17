@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 # External Dependencies:
 from aws_cdk import (
+    AssetHashType,
     BundlingOptions,
     BundlingOutput,
     CfnTag,
@@ -49,6 +50,23 @@ class SageMakerDLCSpec:
     """Data class to specify a SageMaker Deep Learning Container
 
     Contains parameters for looking up container image URIs via SageMaker Python SDK.
+
+    Parameters
+    ----------
+    framework :
+        Name of the base ML framework (as per SageMaker Python SDK image_uris.retrieve()).
+    py_version :
+        Python version for the base image (per SageMaker Python SDK image_uris.retrieve()).
+    version :
+        Framework version for the base image (per SageMaker Python SDK image_uris.retrieve()).
+    use_gpu :
+        Set True to use the GPU-optimized version of the base image (if available), or False
+        for the CPU-optimized version.
+    image_scope :
+        "training", "inference", etc (per SageMaker Python SDK image_uris.retrieve()).
+    base_framework_version :
+        Underlying ML framework version (per SageMaker Python SDK image_uris.retrieve(), as
+        used for e.g. Hugging Face framework with both PyTorch and TensorFlow variants).
     """
 
     framework: str
@@ -57,6 +75,20 @@ class SageMakerDLCSpec:
     use_gpu: bool = False
     image_scope: str = "inference"
     base_framework_version: Optional[str] = None
+
+    def to_sm_image_retrieve_args(self, region_name: str) -> dict:
+        """Generate keyword arguments for sagemaker.image_uris.retrieve() URI lookup"""
+        args = {
+            "framework": self.framework,
+            "image_scope": self.image_scope,
+            "instance_type": "ml.g4dn.xlarge" if self.use_gpu else "ml.c5.xlarge",
+            "py_version": self.py_version,
+            "region": region_name,
+            "version": self.version,
+        }
+        if self.base_framework_version is not None:
+            args["base_framework_version"] = self.base_framework_version
+        return args
 
 
 class SageMakerDLCBasedImage(Construct):
@@ -83,11 +115,7 @@ class SageMakerDLCBasedImage(Construct):
         id: str,
         directory: str,
         ecr_repo: Union[str, ecr.IRepository],
-        framework: str,
-        use_gpu: bool,
-        image_scope: str,
-        py_version: str,
-        version: str,
+        base_image_spec: SageMakerDLCSpec,
         build_args: Optional[Dict[str, str]] = None,
         exclude: Optional[List[str]] = None,
         extra_hash: Optional[str] = None,
@@ -98,7 +126,6 @@ class SageMakerDLCBasedImage(Construct):
         network_mode: Optional[NetworkMode] = None,
         platform: Optional[Platform] = None,
         target: Optional[str] = None,
-        base_framework_version: Optional[str] = None,
         ecr_tag: str = "latest",
         **kwargs,
     ):
@@ -116,17 +143,8 @@ class SageMakerDLCBasedImage(Construct):
             Name of the Amazon ECR repository to stage the image to, or a CDK aws_ecr.Repository
             object. (Note that your image will *also* get pushed to a CDK-managed repository in
             your account by the CDK Asset bundling system).
-        framework :
-            Name of the base ML framework (as per SageMaker Python SDK image_uris.retrieve()).
-        use_gpu :
-            Set True to use the GPU-optimized version of the base image (if available), or False
-            for the CPU-optimized version.
-        image_scope :
-            "training", "inference", etc (per SageMaker Python SDK image_uris.retrieve()).
-        py_version :
-            Python version for the base image (per SageMaker Python SDK image_uris.retrieve()).
-        version :
-            Framework version for the base image (per SageMaker Python SDK image_uris.retrieve()).
+        base_image_spec :
+            Parameters describing the SageMaker Deep Learning Container image to use as a base.
         build_args :
             Optional additional docker build args (other than BASE_IMAGE, which will be set
             automatically).
@@ -150,9 +168,6 @@ class SageMakerDLCBasedImage(Construct):
             Optional Docker target platform (per CDK DockerImageAsset).
         target :
             Optional Docker build target (per CDK DockerImageAsset).
-        base_framework_version :
-            Underlying ML framework version (per SageMaker Python SDK image_uris.retrieve(), as
-            used for e.g. Hugging Face framework with both PyTorch and TensorFlow variants).
         ecr_tag :
             Tag name to use for your staged Amazon ECR image.
         """
@@ -162,17 +177,9 @@ class SageMakerDLCBasedImage(Construct):
         base_image_region = os.environ.get(
             "AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
         )
-        base_image_args = {
-            "framework": framework,
-            "image_scope": image_scope,
-            "instance_type": "ml.g4dn.xlarge" if use_gpu else "ml.c5.xlarge",
-            "py_version": py_version,
-            "region": base_image_region,
-            "version": version,
-        }
-        if base_framework_version is not None:
-            base_image_args["base_framework_version"] = base_framework_version
-        base_image_uri = sm_image_retrieve(**base_image_args)
+        base_image_uri = sm_image_retrieve(
+            **base_image_spec.to_sm_image_retrieve_args(region_name=base_image_region)
+        )
 
         # Pass the base image in as an arg for the (local) Docker build:
         if not build_args:
@@ -266,6 +273,168 @@ class SageMakerDLCBasedImage(Construct):
         return ecr_host
 
 
+class ModelTarballAsset(s3assets.Asset):
+    """A CDK S3 asset to tarball a local folder for use as a SageMaker model artifact
+
+    Nests the source folder under a 'code/' prefix in the output tarball, for consistency with
+    PyTorch and HuggingFace framework container expectations.
+    """
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        source_dir: str,
+        readers: Optional[Sequence[iam.IGrantable]] = None,
+        asset_hash: Optional[str] = None,
+        asset_hash_type: Optional[AssetHashType] = None,
+        exclude: Optional[Sequence[str]] = None,
+        follow_symlinks: Optional[SymlinkFollowMode] = None,
+        ignore_mode: Optional[IgnoreMode] = None,
+    ) -> None:
+        super().__init__(
+            scope,
+            id,
+            path=source_dir,
+            readers=readers,
+            asset_hash=asset_hash,
+            asset_hash_type=asset_hash_type,
+            bundling=BundlingOptions(
+                image=aws_lambda.Runtime.PYTHON_3_8.bundling_image,
+                entrypoint=["bash", "-c"],
+                # TODO: Nesting under code/ is good for PyTorch/HF, but not all frameworks
+                command=["tar --transform 's,^,code/,' -czf /asset-output/model.tar.gz ."],
+                output_type=BundlingOutput.ARCHIVED,
+            ),
+            exclude=exclude,
+            follow_symlinks=follow_symlinks,
+            ignore_mode=ignore_mode,
+        )
+
+
+class SageMakerEndpointExecutionRole(iam.Role):
+    """IAM Role with base permissions to use for running SageMaker inference endpoints.
+
+    This class automatically sets up a default inline policy granting permissions to store logs and
+    metrics, as well as pull access to ECR repositories you specify.
+    """
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        description: Optional[str] = None,
+        external_ids: Optional[Sequence[str]] = None,
+        inline_policies: Optional[Mapping[str, iam.PolicyDocument]] = None,
+        managed_policies: Optional[Sequence[iam.IManagedPolicy]] = None,
+        max_session_duration: Optional[Duration] = None,
+        path: Optional[str] = None,
+        permissions_boundary: Optional[iam.IManagedPolicy] = None,
+        role_name: Optional[str] = None,
+        ecr_repositories: List[ecr.IRepository] = [],
+    ):
+        """Create a SageMakerEndpointExecutionRole
+
+        Parameters as per aws_iam.Role except where explicitly specified.
+        
+        Parameters
+        ----------
+        ecr_repositories :
+            List of Amazon ECR repositories that this role should be able to pull container images
+            from. You can add more after construction via `add_ecr_repo()`.
+        """
+        super().__init__(
+            scope,
+            id,
+            assumed_by=iam.ServicePrincipal("sagemaker.amazonaws.com"),
+            description=description,
+            external_ids=external_ids,
+            inline_policies=inline_policies,
+            managed_policies=managed_policies,
+            max_session_duration=max_session_duration,
+            path=path,
+            permissions_boundary=permissions_boundary,
+            role_name=role_name,
+        )
+
+        # We create the policy as a specific construct (rather than just incorporating into
+        # inline_policies) so it can be added to centrally and explicitly depended on.
+        ecr_read_statement = iam.PolicyStatement(
+            actions=[
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:ListImages",
+                "ecr:BatchCheckLayerAvailability",
+            ],
+            resources=ecr_repositories[:],
+        )
+        s3_read_statement = iam.PolicyStatement(
+            actions=["s3:GetObject", "s3:GetObjectTorrent", "s3:GetObjectVersion"],
+            resources=[],
+        )
+        default_policy = iam.Policy(
+            self,
+            "DefaultSMPolicy",
+            document=iam.PolicyDocument(
+                statements=[
+                    ecr_read_statement,
+                    s3_read_statement,
+                    iam.PolicyStatement(
+                        actions=[
+                            # These actions take no resources
+                            "cloudwatch:PutMetricData",
+                            "ecr:GetAuthorizationToken",
+                            "logs:CreateLogDelivery",
+                            "logs:DeleteLogDelivery",
+                            "logs:GetLogDelivery",
+                            "logs:ListLogDeliveries",
+                            "logs:UpdateLogDelivery",
+                        ],
+                        resources=["*"],
+                    ),
+                    iam.PolicyStatement(
+                        actions=[
+                            # Log group level perms:
+                            "logs:CreateLogGroup",
+                            "logs:CreateLogStream",
+                            # Log stream level perms:
+                            "logs:PutLogEvents",
+                        ],
+                        # If you moved these perms from the model creation to the endpoint creation,
+                        # could further scope them down to:
+                        # Group: /aws/sagemaker/Endpoints/{ENDPOINT_NAME}
+                        # Streams like "{VARIANTNAME}/{UNIQUE_ID}"
+                        # arn:${Partition}:logs:${Region}:${Account}:log-group:${LogGroupName}
+                        # arn:${Partition}:logs:${Region}:${Account}:log-group:${LogGroupName}:log-stream:${LogStreamName}
+                        resources=["*"],
+                    ),
+                ],
+            ),
+            roles=[self],
+        )
+        self._default_policy = default_policy
+        self._ecr_read_statement = ecr_read_statement
+        self._s3_read_statement = s3_read_statement
+    
+    def add_ecr_repo(self, repository: ecr.Repository) -> None:
+        """Add permission to pull images from the given repo to this role's inline policy"""
+        self._ecr_read_statement.add_resources(repository.repository_arn)
+
+    def add_s3_asset(self, asset: s3assets.Asset) -> None:
+        self._s3_read_statement.add_resources(
+            s3.Bucket.from_bucket_name(
+                self,
+                "AssetBucket",
+                asset.s3_bucket_name,
+            ).arn_for_objects("*"),
+        )
+
+    @property
+    def default_policy(self) -> iam.Policy:
+        return self._default_policy
+
+
 class SageMakerCustomizedDLCModel(Construct):
     """Create a SageMaker Model based on a customized SageMakerDLCBasedImage
 
@@ -281,7 +450,7 @@ class SageMakerCustomizedDLCModel(Construct):
         scope: Construct,
         id: str,
         image: SageMakerDLCBasedImage,
-        execution_role: iam.IRole,
+        execution_role: SageMakerEndpointExecutionRole,
         entry_point: str,
         source_dir: Union[str, os.PathLike],
         environment: Optional[Mapping[str, str]] = None,
@@ -325,72 +494,15 @@ class SageMakerCustomizedDLCModel(Construct):
         """
         super().__init__(scope, id)
 
-        self.asset = s3assets.Asset(
+        self.asset = ModelTarballAsset(
             self,
             "ModelTarball",
-            path=source_dir,
-            bundling=BundlingOptions(
-                image=aws_lambda.Runtime.PYTHON_3_8.bundling_image,
-                entrypoint=["bash", "-c"],
-                # TODO: Nesting under code/ is good for PyTorch/HF, but not all frameworks
-                command=["tar --transform 's,^,code/,' -czf /asset-output/model.tar.gz ."],
-                output_type=BundlingOutput.ARCHIVED,
-            ),
+            source_dir=source_dir,
+            # Adding the execution_role as a 'reader' here is not sufficient as the generated policy
+            # can't be depended on by the CFnModel below.
         )
-
-        asset_bucket = s3.Bucket.from_bucket_name(self, "AssetBucket", self.asset.s3_bucket_name)
-        assets_policy = iam.Policy(
-            self,
-            "CDKArtifactAccess",
-            document=iam.PolicyDocument(
-                statements=[
-                    iam.PolicyStatement(
-                        actions=["s3:GetObject", "s3:GetObjectTorrent", "s3:GetObjectVersion"],
-                        resources=[asset_bucket.arn_for_objects(self.asset.s3_object_key)],
-                    ),
-                    iam.PolicyStatement(
-                        actions=[
-                            # These actions take no resources
-                            "cloudwatch:PutMetricData",
-                            "ecr:GetAuthorizationToken",
-                            "logs:CreateLogDelivery",
-                            "logs:DeleteLogDelivery",
-                            "logs:GetLogDelivery",
-                            "logs:ListLogDeliveries",
-                            "logs:UpdateLogDelivery",
-                        ],
-                        resources=["*"],
-                    ),
-                    iam.PolicyStatement(
-                        actions=[
-                            "ecr:BatchCheckLayerAvailability",
-                            "ecr:BatchGetImage",
-                            "ecr:GetDownloadUrlForLayer",
-                            "ecr:ListImages",
-                            "ecr:BatchCheckLayerAvailability",
-                        ],
-                        resources=[image.repo.repository_arn],
-                    ),
-                    iam.PolicyStatement(
-                        actions=[
-                            # Log group level perms:
-                            "logs:CreateLogGroup",
-                            "logs:CreateLogStream",
-                            # Log stream level perms:
-                            "logs:PutLogEvents",
-                        ],
-                        # If you moved these perms from the model creation to the endpoint creation,
-                        # could further scope them down to:
-                        # Group: /aws/sagemaker/Endpoints/{ENDPOINT_NAME}
-                        # Streams like "{VARIANTNAME}/{UNIQUE_ID}"
-                        # arn:${Partition}:logs:${Region}:${Account}:log-group:${LogGroupName}
-                        # arn:${Partition}:logs:${Region}:${Account}:log-group:${LogGroupName}:log-stream:${LogStreamName}
-                        resources=["*"],
-                    ),
-                ],
-            ),
-            roles=[execution_role],
-        )
+        execution_role.add_s3_asset(self.asset)
+        execution_role.add_ecr_repo(image.repo)
         self._execution_role = execution_role
 
         env_final = {
@@ -422,7 +534,7 @@ class SageMakerCustomizedDLCModel(Construct):
             model_name=model_name,
             tags=tags,
         )
-        self._cfn_model.node.add_dependency(assets_policy)
+        self._cfn_model.node.add_dependency(execution_role.default_policy)
         self._cfn_model.node.add_dependency(image.deployment)
 
     @property
