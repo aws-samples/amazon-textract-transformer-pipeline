@@ -288,7 +288,26 @@ class ModelArguments:
                 with tarfile.open(
                     os.path.join(self.model_name_or_path, tar_candidates[0])
                 ) as tarmodel:
-                    tarmodel.extractall(self.model_name_or_path)
+                    def is_within_directory(directory, target):
+                        
+                        abs_directory = os.path.abspath(directory)
+                        abs_target = os.path.abspath(target)
+                    
+                        prefix = os.path.commonprefix([abs_directory, abs_target])
+                        
+                        return prefix == abs_directory
+                    
+                    def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                    
+                        for member in tar.getmembers():
+                            member_path = os.path.join(path, member.name)
+                            if not is_within_directory(path, member_path):
+                                raise Exception("Attempted Path Traversal in Tar File")
+                    
+                        tar.extractall(path, members, numeric_owner=numeric_owner) 
+                        
+                    
+                    safe_extract(tarmodel, self.model_name_or_path)
                 print(f"Model folder top-level contents: {os.listdir(self.model_name_or_path)}")
             elif n_tar_candidates > 1:
                 raise ValueError("model_name_or_path data channel contains >1 .tar.gz file")
@@ -301,7 +320,26 @@ class ModelArguments:
             modelfolder = os.path.dirname(self.model_name_or_path)
             print(f"Extracting model tarball {self.model_name_or_path} to {modelfolder}")
             with tarfile.open(self.model_name_or_path) as tarmodel:
-                tarmodel.extractall(modelfolder)
+                def is_within_directory(directory, target):
+                    
+                    abs_directory = os.path.abspath(directory)
+                    abs_target = os.path.abspath(target)
+                
+                    prefix = os.path.commonprefix([abs_directory, abs_target])
+                    
+                    return prefix == abs_directory
+                
+                def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                
+                    for member in tar.getmembers():
+                        member_path = os.path.join(path, member.name)
+                        if not is_within_directory(path, member_path):
+                            raise Exception("Attempted Path Traversal in Tar File")
+                
+                    tar.extractall(path, members, numeric_owner=numeric_owner) 
+                    
+                
+                safe_extract(tarmodel, modelfolder)
             print(f"Model folder top-level contents: {os.listdir(modelfolder)}")
 
 
