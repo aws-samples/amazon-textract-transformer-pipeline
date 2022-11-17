@@ -128,7 +128,7 @@ Resources:
       ConcurrentBuildLimit: 1
       Description: 'CDK stack deployer'
       Environment:
-        ComputeType: BUILD_GENERAL1_SMALL
+        ComputeType: BUILD_GENERAL1_MEDIUM
         EnvironmentVariables:
           - Name: PUBLIC_REPO
             Type: PLAINTEXT
@@ -155,7 +155,7 @@ Resources:
         ImagePullCredentialsType: CODEBUILD
         PrivilegedMode: true  # Need to build container images within the project
         Type: LINUX_CONTAINER
-      QueuedTimeoutInMinutes: 60
+      QueuedTimeoutInMinutes: 80
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
       Source:
         BuildSpec: |
@@ -180,7 +180,7 @@ Resources:
                 - poetry run cdk deploy --all --require-approval never
         SourceIdentifier: coderepo
         Type: NO_SOURCE
-      TimeoutInMinutes: 40
+      TimeoutInMinutes: 60
 
   # Creating a CodeBuild project in CloudFormation doesn't automatically start a build, so below we
   # set up an AWS Lambda Function based Custom Resource to trigger the build whenever the stack is
