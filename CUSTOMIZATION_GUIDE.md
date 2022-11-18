@@ -8,12 +8,15 @@ This file contains suggestions and considerations to help you apply and customiz
 
 1. [Bring your own dataset guidance](#Bring-your-own-dataset-Getting-started-step-by-step)
 1. [Customizing the pipeline](#Customizing-the-pipeline)
-    - [Skipping page image generation](#Skipping-page-image-generation-(optimizing-for-LayoutLMv1))
+    - [Skipping page image generation (optimizing for LayoutLMv1)](#skip-thumbnails)
     - [Auto-scaling SageMaker endpoints](#Auto-scaling-SageMaker-endpoints)
-    - [Handling large documents (or optimizing for small ones)](#Handling-large-documents-(or-optimizing-for-small-ones))
-    - [Using Amazon Textract `TABLES` and `FORMS` features in the pipeline](Using-Amazon-Textract-TABLES-and-FORMS-features-in-the-pipeline)
+    - [Handling large documents (or optimizing for small ones)](#Handling-large-documents-or-optimizing-for-small-ones)
+    - [Using Amazon Textract `TABLES` and `FORMS` features in the pipeline](#Using-Amazon-Textract-TABLES-and-FORMS-features-in-the-pipeline)
     - [Using alternative OCR engines](#Using-alternative-OCR-engines)
 1. [Customizing the models](#Customizing-the-models)
+    - [How much data do I need?](#How-much-data-do-i-need)
+    - [Should I pre-train to my domain, or just fine-tune?](#Should-I-pre-train-to-my-domain-or-just-fine-tune)
+    - [Scaling and optimizing model training](#Scaling-and-optimizing-model-training)
 
 ---
 
@@ -95,7 +98,7 @@ If your dataset is particularly tiny (more like e.g. 30 labelled pages than 100)
 
 ## Customizing the pipeline
 
-### Skipping page image generation (optimizing for LayoutLMv1)
+### Skipping page image generation (optimizing for LayoutLMv1)<a id='skip-thumbnails'></a>
 
 By default, the deployed pipeline will invoke a page thumbnail image generation endpoint in parallel to running input documents through Amazon Textract. These are useful additional inputs for some model architectures supported by the pipeline (e.g. LayoutLMv2, LayoutXLM), but are not required or used by LayoutLMv1.
 
