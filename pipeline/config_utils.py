@@ -60,5 +60,5 @@ def list_env_var(env_var_name: str, default: Optional[List[str]] = None) -> List
         if default is None:
             raise ValueError(f"Mandatory string-list env var {env_var_name} not found")
         return default[:]
-    whitespace_stripped_values = [s.strip for s in raw.split(",")]
+    whitespace_stripped_values = [s.strip() for s in raw.split(",")]
     return [s for s in whitespace_stripped_values if s]
