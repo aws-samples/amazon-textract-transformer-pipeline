@@ -359,8 +359,6 @@ class SageMakerEndpointExecutionRole(iam.Role):
             role_name=role_name,
         )
 
-        # We create the policy as a specific construct (rather than just incorporating into
-        # inline_policies) so it can be added to centrally and explicitly depended on.
         ecr_read_statement = iam.PolicyStatement(
             actions=[
                 "ecr:BatchCheckLayerAvailability",
@@ -375,6 +373,9 @@ class SageMakerEndpointExecutionRole(iam.Role):
             actions=["s3:GetObject", "s3:GetObjectTorrent", "s3:GetObjectVersion"],
             resources=[],
         )
+
+        # We create the policy as a specific construct (rather than just incorporating into
+        # inline_policies) so it can be added to centrally and explicitly depended on.
         default_policy = iam.Policy(
             self,
             "DefaultSMPolicy",
@@ -424,6 +425,7 @@ class SageMakerEndpointExecutionRole(iam.Role):
         self._ecr_read_statement.add_resources(repository.repository_arn)
 
     def add_s3_asset(self, asset: s3assets.Asset) -> None:
+        """Add permission to read an S3 asset to this role's inline policy"""
         self._s3_read_statement.add_resources(
             s3.Bucket.from_bucket_name(
                 self,
@@ -434,6 +436,7 @@ class SageMakerEndpointExecutionRole(iam.Role):
 
     @property
     def default_policy(self) -> iam.Policy:
+        """Reference to this role's default inline policy (in case you need to dependOn it)"""
         return self._default_policy
 
 

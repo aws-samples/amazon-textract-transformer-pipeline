@@ -153,13 +153,13 @@ class SageMakerOCRStep(Construct):
         ocr_results_prefix :
             Prefix under which Textract result files should be stored in S3 (under this prefix,
             the original input document keys will be mapped).
-        build_sm_ocr :
-            List of alternative (SageMaker-based) OCR engine names as per `CUSTOM_OCR_ENGINES`, to
-            build container images and SageMaker Models for in the deployed stack.
-        deploy_sm_ocr :
-            List of alternative OCR engine names to deploy SageMaker endpoints for in the stack. Any
-            names in here must also be included in `build_sagemaker_ocr`.
-        use_sm_ocr :
+        build_engine_names :
+            List of custom OCR engine names as per `CUSTOM_OCR_ENGINES`, to build container images
+            and SageMaker Models for.
+        deploy_engine_names :
+            List of custom OCR engine names to deploy SageMaker endpoints for. Any names in here
+            must also be included in `build_engine_names`.
+        use_engine_name :
             Name of which custom OCR engine to reference in the Step Functions pipeline step.
         enable_autoscaling :
             Set True to enable auto-scaling on the endpoint to optimize resource usage (recommended
@@ -184,7 +184,7 @@ class SageMakerOCRStep(Construct):
                 )
         if use_engine_name == "":
             use_engine_name = None
-        if use_engine_name is not None and use_engine_name not in deploy_engine_names:
+        if use_engine_name and (use_engine_name not in deploy_engine_names):
             raise ValueError(
                 f"use_engine_name '{use_engine_name}' must be in deploy list {deploy_engine_names}"
             )
@@ -276,9 +276,9 @@ class SageMakerOCRStep(Construct):
             parameter_name=f"{ssm_param_prefix}SMOCREndpointName",
             simple_name=False,
             string_value=(
-                "undefined"
-                if use_engine_name is None
-                else self.deployments[use_engine_name].endpoint_name
+                self.deployments[use_engine_name].endpoint_name
+                if use_engine_name
+                else "undefined"
             ),
         )
         lambda_role.add_to_policy(

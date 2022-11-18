@@ -512,7 +512,7 @@ def describe_sagemaker_ocr_model(engine_name: str) -> dict:
     if n_candidates < 1:
         raise ValueError(
             "Couldn't find any SageMaker models with tag 'OCREngineName' = '%s'. Check your CDK "
-            "solution deployed with BUILD_SM_OCR including this engine, or locate your intended "
+            "solution deployed with BUILD_SM_OCRS including this engine, or locate your intended "
             "OCR model by hand." % (engine_name,)
         )
     elif n_candidates > 1:

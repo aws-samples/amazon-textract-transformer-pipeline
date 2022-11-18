@@ -60,8 +60,8 @@ class ProcessingPipeline(Construct):
         ssm_param_prefix: Union[Token, str],
         use_thumbnails: bool = True,
         enable_sagemaker_autoscaling: bool = False,
-        build_sagemaker_ocr: List[str] = [],
-        deploy_sagemaker_ocr: List[str] = [],
+        build_sagemaker_ocrs: List[str] = [],
+        deploy_sagemaker_ocrs: List[str] = [],
         use_sagemaker_ocr: Optional[str] = None,
         **kwargs,
     ):
@@ -92,18 +92,18 @@ class ProcessingPipeline(Construct):
             will introduce cold-start delays to affected stages of the pipeline so may not be ideal
             during development. This setting does not affect endpoints created *outside* the stack
             and later plumbed in to the pipeline (i.e. endpoints deployed from notebooks).
-        build_sagemaker_ocr :
+        build_sagemaker_ocrs :
             List of alternative (SageMaker-based) OCR engine names to build container images and
             SageMaker Models for in the deployed stack. By default ([]), none will be included. See
             `CUSTOM_OCR_ENGINES` in pipeline/ocr/sagemaker_ocr.py for supported engines.
-        deploy_sagemaker_ocr :
+        deploy_sagemaker_ocrs :
             List of alternative OCR engine names to deploy SageMaker endpoints for in the stack. Any
-            names in here must also be included in `build_sagemaker_ocr`. Default []: Support Amazon
-            Textract OCR only.
+            names in here must also be included in `build_sagemaker_ocrs`. Default []: Support
+            Amazon Textract OCR only.
         use_sagemaker_ocr :
-            Optional alternative OCR engine name to use in the deployed document pipeline. If set,
-            this must also be present in `build_sagemaker_ocr` and `deploy_sagemaker_ocr`. Default
-            None: Use Amazon Textract for initial document OCR.
+            Optional alternative OCR engine name to use in the deployed document pipeline. If set
+            and not empty, this must also be present in `build_sagemaker_ocrs` and
+            `deploy_sagemaker_ocrs`. Default None: Use Amazon Textract for initial document OCR.
         **kwargs : Any
             Passed through to parent Construct
         """
@@ -208,9 +208,9 @@ class ProcessingPipeline(Construct):
             input_bucket=self.input_bucket,
             output_bucket=self.textract_results_bucket,
             output_prefix="textract",
-            build_sm_ocr=build_sagemaker_ocr,
-            deploy_sm_ocr=deploy_sagemaker_ocr,
-            use_sm_ocr=use_sagemaker_ocr,
+            build_sagemaker_ocrs=build_sagemaker_ocrs,
+            deploy_sagemaker_ocrs=deploy_sagemaker_ocrs,
+            use_sagemaker_ocr=use_sagemaker_ocr,
             enable_sagemaker_autoscaling=enable_sagemaker_autoscaling,
             shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
         )

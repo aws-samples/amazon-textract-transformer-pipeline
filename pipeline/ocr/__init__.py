@@ -40,9 +40,9 @@ class OCRStep(Construct):
         output_bucket: Bucket,
         output_prefix: str,
         input_prefix: Optional[str] = None,
-        build_sm_ocr: List[str] = [],
-        deploy_sm_ocr: List[str] = [],
-        use_sm_ocr: Optional[str] = None,
+        build_sagemaker_ocrs: List[str] = [],
+        deploy_sagemaker_ocrs: List[str] = [],
+        use_sagemaker_ocr: Optional[str] = None,
         enable_sagemaker_autoscaling: bool = False,
         shared_sagemaker_caller_lambda: Optional[SageMakerCallerFunction] = None,
     ):
@@ -72,18 +72,18 @@ class OCRStep(Construct):
             Prefix under `input_bucket` from which input documents will be fetched. Used to
             configure SageMaker model execution role permissions when auto-deployment of thumbnailer
             endpoint is enabled.
-        build_sm_ocr :
+        build_sagemaker_ocrs :
             List of alternative (SageMaker-based) OCR engine names to build container images and
             SageMaker Models for in the deployed stack. By default ([]), none will be included. See
             `CUSTOM_OCR_ENGINES` in pipeline/ocr/sagemaker_ocr.py for supported engines.
-        deploy_sm_ocr :
+        deploy_sagemaker_ocrs :
             List of alternative OCR engine names to deploy SageMaker endpoints for in the stack. Any
-            names in here must also be included in `build_sagemaker_ocr`. Default []: Support Amazon
-            Textract OCR only.
-        use_sm_ocr :
-            Optional alternative OCR engine name to use in the deployed document pipeline. If set,
-            this must also be present in `build_sagemaker_ocr` and `deploy_sagemaker_ocr`. Default
-            None: Use Amazon Textract for initial document OCR.
+            names in here must also be included in `build_sagemaker_ocrs`. Default []: Support
+            Amazon Textract OCR only.
+        use_sagemaker_ocr :
+            Optional alternative OCR engine name to use in the deployed document pipeline. If set
+            and not empty, this must also be present in `build_sagemaker_ocrs` and
+            `deploy_sagemaker_ocrs`. Default None: Use Amazon Textract for initial document OCR.
         enable_sagemaker_autoscaling :
             Set True to enable auto-scaling on SageMaker OCR endpoints (if any are deployed), to
             optimize resource usage (recommended for production use). Set False to disable it and
@@ -94,7 +94,7 @@ class OCRStep(Construct):
         """
         super().__init__(scope, id)
 
-        if len(build_sm_ocr) > 0:
+        if len(build_sagemaker_ocrs) > 0:
             self.sagemaker_step = SageMakerOCRStep(
                 self,
                 "SageMakerStep",
@@ -104,9 +104,9 @@ class OCRStep(Construct):
                 ocr_results_bucket=output_bucket,
                 input_prefix=input_prefix,
                 ocr_results_prefix=output_prefix,
-                build_engine_names=build_sm_ocr,
-                deploy_engine_names=deploy_sm_ocr,
-                use_engine_name=use_sm_ocr,
+                build_engine_names=build_sagemaker_ocrs,
+                deploy_engine_names=deploy_sagemaker_ocrs,
+                use_engine_name=use_sagemaker_ocr,
                 enable_autoscaling=enable_sagemaker_autoscaling,
                 shared_sagemaker_caller_lambda=shared_sagemaker_caller_lambda,
             )
@@ -121,7 +121,7 @@ class OCRStep(Construct):
             output_prefix=output_prefix,
         )
 
-        if use_sm_ocr and self.sagemaker_step:
+        if use_sagemaker_ocr and self.sagemaker_step:
             self.sfn_task = self.sagemaker_step.sfn_task
         else:
             self.sfn_task = self.textract_step.sfn_task

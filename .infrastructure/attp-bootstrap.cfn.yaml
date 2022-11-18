@@ -142,10 +142,10 @@ Resources:
           - Name: USE_THUMBNAILS
             Type: PLAINTEXT
             Value: !Ref UseThumbnails
-          - Name: BUILD_SM_OCR
+          - Name: BUILD_SM_OCRS
             Type: PLAINTEXT
             Value: !Ref BuildSageMakerOCRs
-          - Name: DEPLOY_SM_OCR
+          - Name: DEPLOY_SM_OCRS
             Type: PLAINTEXT
             Value: !Ref DeploySageMakerOCRs
           - Name: USE_SM_OCR

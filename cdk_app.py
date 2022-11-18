@@ -6,54 +6,38 @@
 # Python Built-Ins:
 import json
 import os
-from typing import List, Optional
 
 # External Dependencies:
 from aws_cdk import App
 
 # Local Dependencies:
 from cdk_demo_stack import PipelineDemoStack
+from pipeline.config_utils import bool_env_var, list_env_var
 
 
-def bool_env_var(env_var_name: str, default: Optional[bool] = None) -> bool:
-    """Parse a boolean environment variable"""
-    raw = os.environ.get(env_var_name)
-    if raw is None:
-        if default is None:
-            raise ValueError(f"Mandatory boolean env var '{env_var_name}' not found")
-        return default
-    raw = raw.lower()
-    if raw in ("1", "true", "y", "yes"):
-        return True
-    elif raw in ("", "0", "false", "n", "no"):
-        return False
-    else:
-        raise ValueError(
-            "Couldn't interpret env var '%s' as boolean. Got: '%s'"
-            % (env_var_name, raw)
-        )
-
-
-def list_env_var(env_var_name: str, default: Optional[List[str]] = None) -> List[str]:
-    """Parse a comma-separated string list from an environment variable"""
-    raw = os.environ.get(env_var_name)
-    if raw is None:
-        if default is None:
-            raise ValueError(f"Mandatory string-list env var {env_var_name} not found")
-        return default[:]
-    return [s for s in raw.split(",") if s]  # (list comp as "" should yield [], not [""])
-
-
-# Top-level configurations loaded from environment variables (or override here):
+# Top-level configurations are loaded from environment variables at the point `cdk synth` or
+# `cdk deploy` is run (or you can override here):
 config = {
+    # Used as a prefix for some cloud resources e.g. SSM parameters:
     "default_project_id": os.environ.get("DEFAULT_PROJECT_ID", default="ocr-transformers-demo"),
+
+    # Set False to skip deploying the page thumbnail image generator, if you're only using models
+    # (like LayoutLMv1) that don't take page image as input features:
     "use_thumbnails": bool_env_var("USE_THUMBNAILS", default=True),
+
+    # Set True to enable auto-scale-to-zero on auto-deployed SageMaker endpoints (including the
+    # thumbnail generator and any custom OCR engines). This saves costs for low-volume workloads,
+    # but introduces a few minutes' extra cold start for requests when all instances are released:
     "enable_sagemaker_autoscaling": bool_env_var("ENABLE_SM_AUTOSCALING", default=False),
 
-    ## Example config for using alternative Tesseract OCR instead of Amazon Textract:
-    "build_sagemaker_ocr": list_env_var("BUILD_SM_OCR", default=[]),
-    "deploy_sagemaker_ocr": list_env_var("DEPLOY_SM_OCR", default=[]),
-    "use_sagemaker_ocr": os.environ.get("USE_SM_OCR", default="tesseract"),
+    # To use alternative Tesseract OCR instead of Amazon Textract, before running `cdk deploy` run:
+    #   export BUILD_SM_OCRS=tesseract
+    #   export DEPLOY_SM_OCRS=tesseract
+    #   export USE_SM_OCR=tesseract
+    # ...Or edit the defaults below to `["tesseract"]` and `"tesseract"`
+    "build_sagemaker_ocrs": list_env_var("BUILD_SM_OCRS", default=[]),
+    "deploy_sagemaker_ocrs": list_env_var("DEPLOY_SM_OCRS", default=[]),
+    "use_sagemaker_ocr": os.environ.get("USE_SM_OCR", default=None),
 }
 
 app = App()

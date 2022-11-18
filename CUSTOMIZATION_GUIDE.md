@@ -154,8 +154,8 @@ This solution includes integration points for deploying alternative, open-source
     - Edit `CUSTOM_OCR_ENGINES` in [pipeline/ocr/sagemaker_ocr.py](pipeline/ocr/sagemaker_ocr.py) to set `OCR_DEFAULT_LANGUAGES` to the comma-separated [Tesseract language codes](https://tesseract-ocr.github.io/tessdoc/Data-Files-in-different-versions.html) needed for your use-case.
     - ⚠️ This languages parameter is not exposed through the CloudFormation bootstrap stack. If you're using that to run your CDK deployment, you'll need to fork and edit the repository.
 1. Before (re)-running `cdk deploy`:
-    - Configure your CDK stack to **build** a Tesseract container & SageMaker Model: `export BUILD_SM_OCR=tesseract`, or refer to the `build_sagemaker_ocr` parameter in [cdk_app.py](cdk_app.py)
-    - Configure your CDK stack to **deploy** a SageMaker endpoint for Tesseract: `export DEPLOY_SM_OCR=tesseract`, or refer to the `deploy_sagemaker_ocr` parameter in cdk_app.py.
+    - Configure your CDK stack to **build** a Tesseract container & SageMaker Model: `export BUILD_SM_OCRS=tesseract`, or refer to the `build_sagemaker_ocrs` parameter in [cdk_app.py](cdk_app.py)
+    - Configure your CDK stack to **deploy** a SageMaker endpoint for Tesseract: `export DEPLOY_SM_OCRS=tesseract`, or refer to the `deploy_sagemaker_ocrs` parameter in cdk_app.py.
     - Configure your CDK pipeline to **use** a SageMaker endpoint instead of Amazon Textract: `export USE_SM_OCR=tesseract`, or refer to the `use_sagemaker_ocr` parameter in cdk_app.py.
     - If you're using the CloudFormation bootstrap stack for this example, you can configure these parameters via CloudFormation.
 
@@ -168,7 +168,7 @@ This solution includes integration points for deploying alternative, open-source
     - Create a new `eng_***.py` script to define your engine, using the existing [eng_tesseract.py](notebooks/preproc/textract_transformers/ocr_engines/eng_tesseract.py) as a guide.
     - Your script should define one class based on `base.BaseOCREngine`, implementing the `process()` method with the expected arguments and return type.
     - Your `process()` method should return an Amazon Textract-compatible (JSONable) dictionary. Use the `generate_response_json()` utility and other classes from [base.py](notebooks/preproc/textract_transformers/ocr_engines/base.py) to help with this.
-- Once your engine is ready, you can deploy it into your stack with `BUILD_SM_OCR`, `DEPLOY_SM_OCR` and `USE_SM_OCR` as described above.
+- Once your engine is ready, you can deploy it into your stack with `BUILD_SM_OCRS`, `DEPLOY_SM_OCRS` and `USE_SM_OCR` as described above.
     - Note that the build and deploy options support multiple engines (comma-separated string), which you can use to test out alternative model and endpoint deployments. However, the stack can only use one OCR engine (or Amazon Textract) at a time.
 - 🚀 Feel free to pull-request your alternative integrations!
 

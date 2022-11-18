@@ -24,7 +24,7 @@ TEXTRACT_LAMBDA_PATH = abs_path("fn-call-textract", __file__)
 
 
 class TextractOCRStep(Construct):
-    """CDK Construct for a concurrency- & TPS-limiting Textract OCR step in a Step Function
+    """CDK Construct for a concurrency- & TPS-limiting Amazon Textract OCR step in a Step Function
 
     This construct's `.sfn_task` expects inputs with $.Input.Bucket and $.Input.Key properties
     specifying the location of the raw input document, and will return an object with Bucket and
@@ -40,6 +40,8 @@ class TextractOCRStep(Construct):
         output_prefix: str,
         concurrency_limit: int = 90,
         warmup_tps_limit: float = 2,
+        lambda_memory_size: int = 1024,
+        lambda_timeout: Duration = Duration.minutes(3),
         timeout_excluding_queue: Duration = Duration.minutes(25),
         timeout_including_queue: Duration = Duration.minutes(30),
         **kwargs,
@@ -69,6 +71,16 @@ class TextractOCRStep(Construct):
             Limit on maximum rate of new Textract job creation. Additional requests will be pooled
             for retry via AWS Step Functions (order not guaranteed). Refer to your account &
             region's Amazon Textract Quotas.
+        lambda_memory_size :
+            MB of memory to reserve for the Lambda function that calls Amazon Textract and
+            consolidates response objects. You may need to increase this setting if dealing with
+            very large documents, to ensure the full consolidated Textract response JSON fits in
+            memory.
+        lambda_timeout :
+            Time-out for the Lambda function that calls Amazon Textract and consolidates response
+            objects. You may need to increase this setting if dealing with documents so large that
+            consolidation takes a long time, or allowing the Lambda to poll/retry Textract API calls
+            over a longer period.
         timeout_excluding_queue :
             Timeout for the Textract processing job itself to be considered as failed.
         timeout_including_queue :
@@ -149,10 +161,10 @@ class TextractOCRStep(Construct):
             },
             index="main.py",
             handler="handler",
-            memory_size=1024,
+            memory_size=lambda_memory_size,
             role=lambda_role,
             runtime=LambdaRuntime.PYTHON_3_8,
-            timeout=Duration.minutes(3),
+            timeout=lambda_timeout,
         )
         self.sns_topic.add_subscription(subs.LambdaSubscription(self.caller_lambda))
 

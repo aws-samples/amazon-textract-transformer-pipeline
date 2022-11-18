@@ -1,47 +1,22 @@
-# Post-Process OCR Results with Transformer Models on Amazon SageMaker
+# Trainable Document Extraction with Transformer Models on Amazon SageMaker
 
-[Amazon Textract](https://docs.aws.amazon.com/textract/latest/dg/what-is.html) is a service that automatically extracts text, handwriting, and some structured data from scanned documents: Going beyond simple optical character recognition (OCR) to identify and extract data from tables (with rows and cells), and forms (as key-value pairs).
+To automate document-based business processes, we usually need to extract specific, standard data points from diverse input documents: For example, vendor and line-item details from purchase orders; customer name and date-of-birth from identity documents; or specific clauses in contracts.
 
-In this "Amazon Textract Transformer Pipeline" sample and accompanying [blog post](https://aws.amazon.com/blogs/machine-learning/bring-structure-to-diverse-documents-with-amazon-textract-and-transformer-based-models-on-amazon-sagemaker/), we show how you can also automate more complex and domain-specific extraction tasks by integrating trainable models on [Amazon SageMaker](https://aws.amazon.com/sagemaker/).
+In human-readable documents, **both layout and text content are important** to extract meaning: So accuracy may be disappointing when using text-only methods (like regular expressions or entity recognition models), position-only methods (like template-based models), or manual combinations of the two.
 
-We demonstrate **multi-modal, layout-aware entity extraction** on an example use case in finance, for which you could now also consider (and may prefer) using **[Amazon Comprehend's native document analysis feature](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/)** and/or [Amazon Textract Queries](https://aws.amazon.com/about-aws/whats-new/2022/04/amazon-textract-launches-queries-feature-analyze-document-api/).
-
-However, this SageMaker-based pipeline provides an integrated framework you can further extend or customize.
-
-## Background
-
-To automate document understanding for business processes, we typically need to extract and standardize specific attributes from input documents: For example vendor and line item details from purchase orders; or specific clauses within contracts.
-
-With Amazon Textract's [structure extraction utilities for forms and tables](https://aws.amazon.com/textract/features/), many of these requirements are trivial out of the box with no custom training required. For example: "pull out the text of the third column, second row of the first table on page 1", or "find what the customer wrote in for the `Email address:` section of the form". With the [Queries](https://docs.aws.amazon.com/textract/latest/dg/how-it-works-analyzing.html) feature, you can even ask basic natural-language questions to extract specific data points.
-
-Since Textract outputs both the detected text and the *position* of each 'block' down to the word level, downstream approaches for further processing are also flexible - such as:
-
-- Using position information together with string matching or Regular Expressions. For example "Find text matching XX/XX/XXXX within the top 5% of the page height"
-- Running extracted text through standard linear text-sequence processing models or AI services like [Amazon Comprehend](https://aws.amazon.com/comprehend/) to analyze. For example picking out `date` entities on a purchase order that might not be explicitly "labelled" in the text - perhaps because the date just appears by itself in the header.
-
-But what about use cases needing still more intelligence? Where, even with these tools, it's too challenging to scale up rule-based logic to extract the specific information you need?
-
-For some use cases incoming documents are highly variable, so simple position-based templating methods may not work well... And the content of the text needs to be accounted for as well. For example:
-
-- In analysing traditional [letters](https://en.wikipedia.org/wiki/Letter_(message)), extracting sender and recipient **addresses** may be difficult for pure text-processing models (because location cues are important), but also hard via templating (because different letterheads or formatting choices may significantly offset the address locations).
-- In commercial business documents, the **name of the vendor** may often be present in front-matter or headers, but usually not specifically labelled e.g. as `Vendor:` - which might help Textract's Key-Value feature extract it.
-- For detecting **subheadings within documents**, it may be possible to write general rules based on text size and relative position - but these could grow very complex if considering, for example, documents with multiple columns or high variability in text size.
-
-In all these cases and others like them, it may be useful to apply an ML model that **jointly** considers the text itself, its position on the page - and perhaps other formatting information too.
-
-For users wanting to apply specific model architectures from open source; to work with less well-supported languages or domain-specific jargon; or to customize task types beyond plain entity recognition - this sample demonstrates using multi-modal document AI models from [Hugging Face Transformers](https://huggingface.co/docs/transformers/index) together with Amazon Textract.
+This sample and accompanying [blog post](https://aws.amazon.com/blogs/machine-learning/bring-structure-to-diverse-documents-with-amazon-textract-and-transformer-based-models-on-amazon-sagemaker/) demonstrate **trainable, multi-modal, layout-aware document understanding** on AWS using [Amazon SageMaker](https://aws.amazon.com/sagemaker/) and open-source models from [Hugging Face Transformers](https://huggingface.co/docs/transformers/index) - optionally integrated with [Amazon Textract](https://docs.aws.amazon.com/textract/latest/dg/what-is.html).
 
 
 ## Solution Overview
 
-This sample sets up a **pipeline** orchestrated by [AWS Step Functions](https://aws.amazon.com/step-functions/), as shown below:
+This sample sets up a **document processing pipeline** orchestrated by [AWS Step Functions](https://aws.amazon.com/step-functions/), as shown below:
 
 ![](img/architecture-overview.png "Architecture overview diagram")
 
 Documents uploaded to the input bucket automatically trigger the workflow, which:
 
-1. Extracts document data using Amazon Textract.
-2. Enriches the Textract response JSON with extra insights using an ML model deployed in SageMaker.
+1. Extracts document data using Amazon Textract (or an alternative OCR engine).
+2. Enriches the Textract/OCR JSON with extra insights using an ML model deployed in SageMaker.
 3. Consolidates the business-level fields in a post-processing Lambda function.
 4. (If any expected fields were missing or low-confidence), forwards the results to a human reviewer.
 
@@ -196,6 +171,25 @@ git clone https://github.com/aws-samples/amazon-textract-transformer-pipeline
 **Step 5: Follow through the setup notebooks**
 
 The Python notebooks in the [notebooks/ folder](notebooks) will guide you through the remaining activities to annotate data, train the post-processing model, and configure and test the solution stack. Open each of the `.ipynb` files in numbered order to follow along.
+
+
+## Background and Use Case Validation
+
+[Amazon Textract](https://docs.aws.amazon.com/textract/latest/dg/what-is.html) is a service that automatically extracts text, handwriting, and some structured data from scanned documents: Going beyond simple optical character recognition (OCR) to identify and extract data from tables (with rows and cells), and forms (as key-value pairs).
+
+Many document understanding tasks can already be tackled with Amazon Textract and the [Amazon Comprehend](https://aws.amazon.com/comprehend/) AI service for natural language processing. For example:
+
+- With the [Forms and Tables APIs](https://aws.amazon.com/textract/features/), Amazon Textract can extract key-value pairs and data tables from documents with no training required.
+- With [Amazon Textract Queries](https://aws.amazon.com/about-aws/whats-new/2022/04/amazon-textract-launches-queries-feature-analyze-document-api/), users can ask simple natural-language questions to guide extraction of specific data points from a page.
+- With [Amazon Comprehend native document NER](https://aws.amazon.com/blogs/machine-learning/extract-custom-entities-from-documents-in-their-native-format-with-amazon-comprehend/), users can train layout-aware models to extract entities from documents.
+- Amazon Textract provides purpose-built APIs for some common document types like [invoices and receipts](https://docs.aws.amazon.com/textract/latest/dg/invoices-receipts.html) and [driving licenses and passports](https://docs.aws.amazon.com/textract/latest/dg/how-it-works-identity.html).
+
+This sample demonstrates layout-aware entity recognition, similar to Amazon Comprehend trained with PDF document annotations. In general, users should consider fully-managed AI service options before selecting a more custom SageMaker-based solution like the one shown here. However, this sample may be interesting to users who want:
+
+- To process documents in languages not currently [supported](https://docs.aws.amazon.com/comprehend/latest/dg/supported-languages.html#supported-languages-feature) by Comprehend PDF/document entity recognition - or Amazon Textract Queries.
+- To customize the modelling tasks - for example for joint entity recognition + document classification, or question answering, or sequence-to-sequence generation.
+- To integrate new model architectures from research and open source.
+- To use the end-to-end pipeline already set up here for model training, deployment, and human review.
 
 
 ## Next Steps

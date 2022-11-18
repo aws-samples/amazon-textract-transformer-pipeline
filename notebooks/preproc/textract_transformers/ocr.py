@@ -22,7 +22,7 @@ from .file_utils import ls_relpaths
 from .image_utils import Document
 
 
-logger = getLogger("preproc")
+logger = getLogger("ocr")
 s3client = boto3.client("s3")
 
 # Environment variable configurations:
@@ -108,7 +108,9 @@ def input_fn(input_bytes: bytes, content_type: str) -> Tuple[Document, Optional[
     )
 
 
-def predict_fn(inputs: Tuple[Document, Optional[Iterable[str]]], engine: ocr_engines.BaseOCREngine) -> dict:
+def predict_fn(
+    inputs: Tuple[Document, Optional[Iterable[str]]], engine: ocr_engines.BaseOCREngine
+) -> dict:
     """Get OCR results for a single input document/image, for the requested language codes
 
     Returns
@@ -124,8 +126,8 @@ def predict_fn(inputs: Tuple[Document, Optional[Iterable[str]]], engine: ocr_eng
 # def output_fn(prediction_output: Dict, accept: str) -> bytes:
 
 
-def parse_args():
-    """Parse SageMaker OCR processing Job CLI arguments to job parameters"""
+def parse_args() -> argparse.Namespace:
+    """Parse SageMaker OCR Processing Job (batch) CLI arguments to job parameters"""
     parser = argparse.ArgumentParser(
         description="OCR documents in batch using an alternative (non-Amazon-Textract) engine"
     )
@@ -139,7 +141,7 @@ def parse_args():
         "--output",
         type=str,
         default="/opt/ml/processing/output/ocr",
-        help="Folder where cleaned output images should be saved",
+        help="Folder where Amazon Textract-compatible OCR results should be saved",
     )
     parser.add_argument(
         "--n-workers",
@@ -152,6 +154,19 @@ def parse_args():
 
 
 def process_doc_in_worker(inputs: dict) -> None:
+    """Batch job worker function to extract a document (used in a multiprocessing pool)
+
+    Parameters
+    ----------
+    inputs :
+        Dictionary containing fields:
+        - in_folder (str): Mandatory path to input documents folder
+        - rel_filepath (str): Mandatory path relative to `in_folder`, to input document
+        - out_folder (str): Mandatory path to OCR results output folder
+        - wait (float): Optional number of seconds to wait before starting processing, to ensure
+            system resources are not *fully* exhausted when running as many threads as CPU cores.
+            (Which could cause health check problems) - Default 0.5.
+    """
     time.sleep(inputs.get("wait", 0.5))
     in_path = os.path.join(inputs["in_folder"], inputs["rel_filepath"])
     doc = Document(
@@ -164,10 +179,7 @@ def process_doc_in_worker(inputs: dict) -> None:
     try:
         result = engine.process(doc, OCR_DEFAULT_LANGUAGES)
     except Exception as e:
-        logger.error(
-            "Failed to process document %s",
-            in_path
-        )
+        logger.error("Failed to process document %s", in_path)
         raise e
     out_path = os.path.join(inputs["out_folder"], inputs["rel_filepath"])
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
