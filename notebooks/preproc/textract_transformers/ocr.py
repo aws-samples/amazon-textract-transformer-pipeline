@@ -156,6 +156,9 @@ def parse_args() -> argparse.Namespace:
 def process_doc_in_worker(inputs: dict) -> None:
     """Batch job worker function to extract a document (used in a multiprocessing pool)
 
+    File paths are mapped similar to this sample's Amazon Textract pipeline. For example:
+    `{in_folder}/some/fld/filename.pdf` to `{out_folder}/some/fld/filename.pdf/consolidated.json`
+
     Parameters
     ----------
     inputs :
@@ -181,7 +184,7 @@ def process_doc_in_worker(inputs: dict) -> None:
     except Exception as e:
         logger.error("Failed to process document %s", in_path)
         raise e
-    out_path = os.path.join(inputs["out_folder"], inputs["rel_filepath"])
+    out_path = os.path.join(inputs["out_folder"], inputs["rel_filepath"], "consolidated.json")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
         f.write(json.dumps(result, indent=2))
