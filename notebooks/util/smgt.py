@@ -127,7 +127,14 @@ def ensure_bucket_cors(
         present.
     """
     bucket_cors = s3.BucketCors(bucket_name)
-    existing_rules = bucket_cors.cors_rules
+
+    try:
+        existing_rules = bucket_cors.cors_rules
+    except s3.meta.client.exceptions.ClientError as err:
+        if err.response.get("Error", {}).get("Code") == "NoSuchCORSConfiguration":
+            existing_rules = []
+        else:
+            raise err
 
     if any(
         r for r in existing_rules if "*" in r["AllowedOrigins"] and "GET" in r["AllowedMethods"]
