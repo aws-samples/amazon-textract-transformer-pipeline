@@ -95,7 +95,10 @@ class TesseractEngine(BaseOCREngine):
         # roll the entities up. Although iterating through large DataFrames isn't generally a
         # performant practice, this could always be balanced with specific parallelism if wanted:
         # E.g. processing multiple pages at once.
-        pages = []
+        pages = {
+            num: OCRPage([])  # Initialise all pages first with no text
+            for num in sorted(ocr_df[ocr_df["level"] == 1]["page_num"].unique())
+        }
         cur_page_num = None
         page_lines = []
         cur_line_id = None
@@ -108,7 +111,6 @@ class TesseractEngine(BaseOCREngine):
         add_line = lambda words: (
             page_lines.append(OCRLine(mean(w.confidence for w in words), words))
         )
-        add_page = lambda lines: pages.append(OCRPage(lines))
 
         # Loop through all WORD records, ignoring whitespace-only ones that Tesseract likes to yield
         words_df = ocr_df[ocr_df["level"] == 5].copy()
@@ -126,7 +128,7 @@ class TesseractEngine(BaseOCREngine):
             if cur_page_num != page_num:
                 # Start of new PAGE - add previous one to result:
                 if cur_page_num is not None:
-                    add_page(page_lines)
+                    pages[cur_page_num].add_lines(page_lines)
                 cur_page_num = page_num
                 page_lines = []
             # Parse this record into a WORD:
@@ -148,5 +150,5 @@ class TesseractEngine(BaseOCREngine):
         if len(line_words):
             add_line(line_words)
         if len(page_lines):
-            add_page(page_lines)
-        return pages
+            pages[cur_page_num].add_lines(page_lines)
+        return [page for page in pages.values()]

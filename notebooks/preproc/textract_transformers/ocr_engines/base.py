@@ -224,7 +224,7 @@ class OCRLine:
             "Relationships": [
                 {
                     "Type": "CHILD",
-                    "Ids": [w.id for w in self.words],
+                    "Ids": [word.id for word in self.words],
                 },
             ],
         }
@@ -249,6 +249,10 @@ class OCRPage:
         self.geometry = geometry or OCRGeometry.from_bbox(0, 0, 1, 1)
         self.lines = lines
 
+    def add_lines(self, lines: List[OCRLine]) -> None:
+        """Add text lines to an already-created OCRPage"""
+        self.lines += lines
+
     def to_blocks(self) -> List[dict]:
         """Render this page as list of Amazon Textract-like JSON-able blocks"""
         child_blocks = [b for line in self.lines for b in line.to_blocks()]
@@ -260,7 +264,7 @@ class OCRPage:
             "Relationships": [
                 {
                     "Type": "CHILD",
-                    "Ids": [l.id for l in self.lines],
+                    "Ids": [line.id for line in self.lines],
                 },
             ],
         }
@@ -280,11 +284,11 @@ def generate_response_json(pages: List[OCRPage], engine_name: str) -> dict:
     """
     page_blocks_by_page = [page.to_blocks() for page in pages]
     for page_ix, blocks in enumerate(page_blocks_by_page):
-        for b in blocks:
-            b["Page"] = page_ix + 1
+        for block in blocks:
+            block["Page"] = page_ix + 1
     return {
         "DetectDocumentTextModelVersion": f"custom-{engine_name}",
         "DocumentMetadata": {"Pages": len(pages)},
         "JobStatus": "SUCCEEDED",
-        "Blocks": [b for page in page_blocks_by_page for b in page],
+        "Blocks": [block for page in page_blocks_by_page for block in page],
     }
