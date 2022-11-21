@@ -15,6 +15,7 @@ from .model_deployment import (
     SageMakerCustomizedDLCModel,
     SageMakerDLCBasedImage,
     SageMakerDLCSpec,
+    SageMakerEndpointExecutionRole,
     SageMakerModelDeployment,
 )
 from .sagemaker_sfn import SageMakerCallerFunction, SageMakerSSMStep

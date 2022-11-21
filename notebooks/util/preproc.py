@@ -1,525 +1,68 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""Data pre-processing utilities
+"""Data pre-processing and manifest consolidation utilities
 """
-
 # Python Built-Ins:
 from __future__ import annotations
-from collections import deque
-from datetime import datetime
 import json
 from logging import getLogger
-from math import ceil
 import os
+from random import Random
 import re
-import time
-from typing import Callable, Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Set, TextIO, Tuple, Union
 
 # External Dependencies:
 import boto3
-import numpy as np
+from sagemaker.estimator import Framework
 from tqdm.notebook import tqdm  # Progress bars
 import trp  # Amazon Textract Response Parser
 
 # Local Dependencies:
-from . import uid
+from .s3 import s3_object_exists, s3uri_to_bucket_and_key, s3uri_to_relative_path
 
 
 logger = getLogger("preproc")
 s3 = boto3.resource("s3")
-s3client = boto3.client("s3")
-sfn = boto3.client("stepfunctions")
 
 
-def s3uri_to_bucket_and_key(s3uri: str) -> Tuple[str, str]:
-    """Convert an s3://... URI string to a (bucket, key) tuple"""
-    if not s3uri.lower().startswith("s3://"):
-        raise ValueError(f"Expected S3 object URI to start with s3://. Got: {s3uri}")
-    bucket, _, key = s3uri[len("s3://") :].partition("/")
-    return bucket, key
+class DummyFramework(Framework):
+    """A dummy to allow running FrameworkProcessor jobs on custom containers with unknown base FWs
 
+    Use this class with `sagemaker.processing.FrameworkProcessor`, to enable running framework-mode
+    (source_dir of multiple scripts, perhaps with a requirements.txt) processing jobs on customized
+    DLCs without worrying about the exact framework and version parameters.
 
-def s3_object_exists(bucket_name_or_s3uri: str, key: Optional[str] = None) -> bool:
-    """Check if an object exists in Amazon S3
+    FrameworkProcessor usually requires an `estimator_cls` parameter (e.g. PyTorch, HuggingFace) and
+    specific framework version information - but this is mainly used for looking up standard
+    container image URIs. Most of the relevant implementation for running processing is shared
+    across frameworks.
 
-    Parameters
-    ----------
-    bucket_name_or_s3uri :
-        Either an 's3://.../...' object URI, or an S3 bucket name.
-    key :
-        Ignored if `bucket_name_or_s3uri` is a full URI, otherwise mandatory: Key of the object to
-        check.
-    """
-    if bucket_name_or_s3uri.lower().startswith("s3://"):
-        bucket_name, key = s3uri_to_bucket_and_key(bucket_name_or_s3uri)
-    elif not key:
-        raise ValueError(
-            "key is mandatory when bucket_name_or_s3uri is not an s3:// URI. Got: %s"
-            % bucket_name_or_s3uri
-        )
-    else:
-        bucket_name = bucket_name_or_s3uri
-    try:
-        s3client.head_object(Bucket=bucket_name, Key=key)
-        return True
-    except s3client.exceptions.ClientError as e:
-        if e.response["Error"]["Code"] == "404":
-            return False
-        else:
-            raise e
+    If you only have a single script file, use `ScriptProcessor` instead for simplicity and
+    stability. If you know exactly what framework and version your container should run with, use
+    the specific framework's processor (e.g. `PyTorchProcessor`). When you have a framework-based
+    container image and want to run a bundle of Python files on it, agnostic of exactly what
+    framework/version it is, you can use this as follows:
 
-
-def list_preannotated_textract_uris(
-    ann_jobs_folder: str = "data/annotations",
-    exclude_job_names: List[str] = [],
-) -> List[str]:
-    """List out (alphabetically) the textract-ref URIs for which annotations already exist locally
-
-    Parameters
-    ----------
-    ann_jobs_folder :
-        A local folder containing the outputs of multiple SageMaker Ground Truth jobs (either
-        directly output manifest files, or the folder sub-structures created by SMGT in S3).
-    exclude_job_names :
-        List of any job names under `ann_jobs_folder` to exclude from the check.
-    """
-    uris = set()  # Protect against introducing duplicates
-    for job in os.listdir(ann_jobs_folder):
-        if job in exclude_job_names:
-            logger.info("Skipping excluded job %s", job)
-            continue
-
-        job_path = os.path.join(ann_jobs_folder, job)
-        if os.path.isfile(job_path):
-            manifest_file = job_path
-        else:
-            manifest_file = os.path.join(job_path, "manifests", "output", "output.manifest")
-            if not os.path.isfile(manifest_file):
-                logger.warning("Skipping job %s: No output manifest at %s", job_path, manifest_file)
-                continue
-
-        try:
-            with open(manifest_file) as f:
-                uris.update([json.loads(line)["textract-ref"] for line in f])
-        except json.JSONDecodeError:
-            logger.warning("%s file is not valid JSON-Lines: Skipping", manifest_file)
-
-    return sorted(uris)
-
-
-class TextractSFnSubmission:
-    """Class to create and track OCR requests to Textract-only Step Functions state machine
-
-    For batch processing, use the `call_textract()` function, which uses this class internally but
-    manages concurrency and warm-up. Otherwise, general usage flow of this class is to call
-    `.prepare_request()`, `.create()`, then `.check_result()`.
+    ```python
+    processor = FrameworkProcessor(
+        estimator_cls=DummyFramework,
+        image_uri=image_uri,  # Your custom, framework-based container
+        framework_version="",  # Can be blank in this case
+        py_version="",  # Can be blank in this case
+        ...
+    )
+    ```
     """
 
-    def __init__(self, doc_s3uri: str, execution_arn: str, started: str, ix: Optional[int] = None):
-        """Create a TextractSfnSubmission from already-known state
+    _framework_name = "dummy"
 
-        If you're using this class to submit requests, you want .create() instead!
+    def create_model(self, **kwargs):
+        """Dummy implementation - raises NotImplementedError if called
 
-        Parameters
-        ----------
-        doc_s3uri :
-            s3://... URI of input document
-        execution_arn :
-            Execution ARN from AWS Step Functions
-        started :
-            ISO Date/time SFn execution was started (e.g. `startDate` field from SFn response)
-        ix :
-            Optional index number to track this submission in a list
+        This method must be implemented to allow instantiating the abstract parent class, but it's
+        not needed for our intended use (running framework-agnostic processing jobs).
         """
-        self.doc_s3uri = doc_s3uri
-        self.execution_arn = execution_arn
-        self.started = started
-        self.ix = ix
-
-    @staticmethod
-    def inter_start_wait_secs(jobs_started: int) -> float:
-        """Calculate the recommended waiting period between starting Textract SFn jobs
-
-        Linear scaling from X=.2s to Y=1s over N=100 jobs after first T=20 jobs
-        """
-        return 0.2 + (1.0 - 0.2) * min(100, max(0, jobs_started - 20)) / 100
-
-    @staticmethod
-    def prepare_request(
-        manifest_item: dict,
-        manifest_raw_field: str = "raw-ref",
-        manifest_out_field: str = "textract-ref",
-        output_base_s3uri: Optional[str] = None,
-        input_base_s3uri: Optional[str] = None,
-        features: List[str] = ["FORMS", "TABLES"],
-        skip_existing: bool = True,
-    ) -> Union[dict, str]:
-        """Prepare a SFn request payload from a manifest line item (or return pre-existing)
-
-        Includes logic to set sensible defaults on S3 output location, if an output URI is not
-        explicitly set by the manifest.
-
-        Parameters
-        ----------
-        manifest_item :
-            Loaded JSON dict from a manifest, detailing this (single) file to be processed.
-        manifest_raw_field :
-            Property name on the `manifest_item` at which the S3 URI of the input (raw) document to
-            be Textracted is given. Default "raw-ref".
-        manifest_out_field :
-            Property name on the `manifest_item` at which the S3 URI of the output (Textract result)
-            will be saved. If the input record already has this field, it will override other output
-            location settings (allowing you to override output location per-document).
-        output_base_s3uri :
-            Must be an s3://... URI if set (no trailing slash). If provided, results will be saved
-            under this S3 path unless otherwise specified per-document by the input manifest (see
-            `manifest_out_field`). If only this param is used, results will be saved to:
-            `{output_base_s3uri}/{entire_input_key}/consolidated.json`. If this parameter is not
-            set, output will be saved directly to `/consolidated.json` under the source document's
-            S3 URI.
-        input_base_s3uri :
-            Must be an s3://... URI if set (no trailing slash). If set alongside
-            `output_base_s3uri`, `input_base_s3uri` will be stripped off the beginning of source doc
-            URIs before mapping the remaining relative path to the `output_base_s3uri` location.
-            I.e. results will be saved to:
-            `{output_base_s3uri}/{input_rel_to_input_base_s3uri}/consolidated.json`. Ignored if
-            `output_base_s3uri` is not set.
-        features :
-            Which additional Textract features you'd like to call in addition to DetectText. Default
-            ["FORMS", "TABLES"]
-        skip_existing :
-            Before processing each doc, check whether a consolidated output JSON already exists for
-            it in S3 and skip if so. Only supported when consolidated S3 output is enabled. Default
-            True.
-
-        Returns
-        -------
-        request_or_s3ri :
-            Either a `dict` request payload for AWS Step Functions / this class' `.create()` method,
-            or an "s3://..." URI if `skip_existing` is enabled and the Textract result already
-            exists.
-        """
-        if input_base_s3uri:
-            if not input_base_s3uri.lower().startswith("s3://"):
-                raise ValueError(
-                    f"input_base_s3uri, if specified, must be an S3 URI. Got: {input_base_s3uri}"
-                )
-            if not input_base_s3uri.endswith("/"):
-                input_base_s3uri += "/"
-            input_bucket, _ = s3uri_to_bucket_and_key(input_base_s3uri)
-        else:
-            input_bucket = None
-
-        if output_base_s3uri:
-            if not output_base_s3uri.lower().startswith("s3://"):
-                raise ValueError(
-                    f"output_base_s3uri, if specified, must be an S3 URI. Got {output_base_s3uri}"
-                )
-            if not output_base_s3uri.endswith("/"):
-                output_base_s3uri += "/"
-            output_bucket, output_prefix = s3uri_to_bucket_and_key(output_base_s3uri)
-        else:
-            output_bucket = None
-            output_prefix = None
-
-        doc_s3uri = manifest_item[manifest_raw_field]
-        doc_bucket, doc_key = s3uri_to_bucket_and_key(doc_s3uri)
-        prev_out_s3uri = manifest_item.get(manifest_out_field)
-        if prev_out_s3uri:
-            out_s3uri = prev_out_s3uri
-            out_bucket, out_key = s3uri_to_bucket_and_key(out_s3uri)
-        elif output_base_s3uri:
-            out_bucket = output_bucket
-            if input_base_s3uri:
-                if not doc_s3uri.startswith(input_base_s3uri):
-                    raise ValueError(
-                        "Input document URI '%s' does not start with provided "
-                        "input_base_s3uri '%s'" % (doc_s3uri, input_base_s3uri)
-                    )
-                relpath = doc_s3uri[len(input_base_s3uri) :]
-            else:
-                relpath = doc_key
-            out_key = "".join((output_prefix, relpath, "/consolidated.json"))
-        else:
-            out_bucket = input_bucket
-            out_key = doc_key + "/consolidated.json"
-
-        if skip_existing:
-            if s3_object_exists(out_bucket, out_key):
-                return f"s3://{out_bucket}/{out_key}"
-
-        # Format expected by the Textract-only SFn State Machine:
-        return {
-            "Input": {
-                "Bucket": doc_bucket,
-                "Key": doc_key,
-            },
-            "Output": {
-                "Features": features,
-                "Key": out_key,
-                "Bucket": out_bucket,
-            },
-        }
-
-    @classmethod
-    def create(
-        cls,
-        state_machine_arn: str,
-        request: dict,
-        ix: Optional[int] = None,
-    ) -> TextractSFnSubmission:
-        """Submit a job to Textract-only State Machine and create a Submission tracker object
-
-        Parameters
-        ----------
-        state_machine_arn :
-            ARN of the Textract-only pipeline state machine
-        request :
-            Step Functions payload object (see `.prepare_request()`)
-        ix :
-            Optional index number to track this submission in a list
-        """
-        doc_s3uri = "".join(
-            (
-                "s3://",
-                request["Input"]["Bucket"],
-                "/",
-                request["Input"]["Key"],
-            )
-        )
-        sfn_resp = sfn.start_execution(
-            stateMachineArn=state_machine_arn,
-            name=uid.append_timestamp("notebook"),
-            input=json.dumps(request),
-        )
-        return cls(
-            doc_s3uri=doc_s3uri,
-            execution_arn=sfn_resp["executionArn"],
-            started=sfn_resp["startDate"],
-            ix=ix,
-        )
-
-    def check_result(
-        self,
-        log_fn: Optional[Callable[[str], None]] = None,
-    ) -> Union[str, dict, None]:
-        """Check the status of this submission, returning result if complete
-
-        Parameters
-        ----------
-        log_fn :
-            Optional callable function to log diagnostics. No logs will be generated if `None`.
-
-        Returns
-        -------
-        result :
-            If the submission is still processing, returns None. If completed successfully, returns
-            the 's3://...' URI string pointing to the result JSON. If the job failed or the result
-            URI could not be found, returns states:DescribeExecution result.
-        """
-        if log_fn is None:
-            log_fn = lambda _: None
-        desc = sfn.describe_execution(executionArn=self.execution_arn)
-        status = desc["status"]
-        if status == "SUCCEEDED":
-            sfn_output = json.loads(desc.get("output", "{}"))
-            result_s3uri = sfn_output.get("Output", {}).get("S3Uri")
-            if result_s3uri:
-                return result_s3uri
-            else:
-                log_fn(f"Doc processed but missing output S3 URI: {self.doc_s3uri}")
-                return desc
-        elif status != "RUNNING":
-            log_fn(f"Doc failed to process - see results for details: {self.doc_s3uri}")
-            return desc
-        else:
-            return None
-
-
-def call_textract(
-    textract_sfn_arn: str,
-    input_manifest: Union[str, List[dict]],
-    manifest_raw_field: str = "raw-ref",
-    manifest_out_field: str = "textract-ref",
-    output_base_s3uri: Optional[str] = None,
-    input_base_s3uri: Optional[str] = None,
-    features: List[str] = ["FORMS", "TABLES"],
-    skip_existing=True,
-) -> List[dict]:
-    """Process a set of documents in S3 with Textract via AWS Step Functions
-
-    Uses the Textract-only Step Functions State Machine set up by this solution's CloudFormation
-    stack to process a batch of documents in S3 - with concurrency and rate limit controls built
-    in to the state machine. Also does a little client-side rate management to try and optimize
-    costs and speed.
-
-    Parameters
-    ----------
-    textract_sfn_arn :
-        The ARN of the "plain Textract state machine" (i.e. Textract only, no post-processing
-        pipeline) created by this stack. See util.project.init() for help fetching this via code.
-    input_manifest :
-        Path to a JSONLines manifest of objects, or an in-memory list/iterable of objects detailing
-        the files to be processed.
-    manifest_raw_field :
-        Property name on the input manifest at which the S3 URI of the input (raw) document to be
-        Textracted is given. Default "raw-ref".
-    manifest_out_field :
-        Property name on the manifest at which the S3 URI of the output (Textract result) will be
-        saved. If input records already have this field, it will override other output location
-        settings (allowing you to override output location per-document).
-    output_base_s3uri :
-        Must be an s3://... URI if set (no trailing slash). If provided, results will be saved
-        under this S3 path unless otherwise specified per-document by the input manifest (see
-        `manifest_out_field`). If only this param is used, results will be saved to:
-        `{output_base_s3uri}/{entire_input_key}/consolidated.json`. If this parameter is not set,
-        output will be saved directly to `/consolidated.json` under the source document's S3 URI.
-    input_base_s3uri :
-        Must be an s3://... URI if set (no trailing slash). If set alongside `output_base_s3uri`,
-        `input_base_s3uri` will be stripped off the beginning of source doc URIs before mapping the
-        remaining relative path to the `output_base_s3uri` location. I.e. results will be saved to:
-        `{output_base_s3uri}/{input_rel_to_input_base_s3uri}/consolidated.json`. Ignored if
-        `output_base_s3uri` is not set.
-    features :
-        Which additional Textract features you'd like to call in addition to DetectText. Default
-        ["FORMS", "TABLES"]
-    skip_existing :
-        Before processing each doc, check whether a consolidated output JSON already exists for it
-        in S3 and skip if so. Only supported when consolidated S3 output is enabled. Default True.
-
-    Returns
-    -------
-    results :
-        Output manifest objects in same order as input (shallow copies), with `manifest_out_field`
-        set one of 3 ways: An s3:// URI string, where the Textraction was successful; an Exception,
-        where some error was logged; or a dict Step Functions DescribeExecution call giving more
-        details if some other failure occurred.
-    """
-    if isinstance(input_manifest, str):
-        with open(input_manifest) as f:
-            input_manifest = [json.loads(line) for line in f]
-
-    # Output manifest is a shallow copy of input objects, so we can override the output field:
-    results = [{**item} for item in input_manifest]
-
-    # Looping first through to create the jobs and then to check their status would be simple, but
-    # would obscure initial insight on progress for big batches and would also present the most
-    # challenging/costly possible burst profile for the state machine to manage. By instead
-    # building a combined event loop where we push new jobs and check some earlier ones, we can
-    # improve on both aspects.
-    enumd_queue_items = deque(enumerate(input_manifest))
-    sfn_submissions: List[TextractSFnSubmission] = []
-    with tqdm(desc="Textracting PDFs...", total=len(input_manifest)) as pbar:
-        with tqdm(desc="Starting jobs...", total=len(input_manifest)) as pstart:
-            # Limit speed of new job creation to be snappy initially, but then cool off to more
-            # sustainable pace when many jobs have been started:
-            jobs_started = 0
-            t_next_startable = datetime.now().timestamp()
-            t_start_checking_results = t_next_startable + 16  # Min expected process latency secs
-
-            def increment_pstart():
-                """Increment job start progress *and* close the progress bar if completed
-
-                We want to close pstart as soon as all jobs are started, in order to display the
-                correct (shorter) total runtime rather than waiting until jobs are also finished.
-                """
-                pstart.update(1)
-                if pstart.n >= pstart.total:
-                    pstart.close()
-
-            # Main event loop:
-            while len(enumd_queue_items) or len(sfn_submissions):
-                # INPUT STEP: Try to process one queued item:
-                if len(enumd_queue_items):
-                    ix, item = enumd_queue_items.popleft()
-                    doc_s3uri = item[manifest_raw_field]
-                    try:
-                        req_or_existing = TextractSFnSubmission.prepare_request(
-                            item,
-                            manifest_raw_field=manifest_raw_field,
-                            manifest_out_field=manifest_out_field,
-                            output_base_s3uri=output_base_s3uri,
-                            input_base_s3uri=input_base_s3uri,
-                            features=features,
-                            skip_existing=skip_existing,
-                        )
-
-                        if isinstance(req_or_existing, str):
-                            pbar.write(f"Skipping already-textracted '{doc_s3uri}'")
-                            results[ix][manifest_out_field] = req_or_existing
-                            increment_pstart()
-                            pbar.update(1)
-                            continue
-
-                        # Else req_or_existing is a SFn request:
-                        request = req_or_existing
-                    except Exception as err:
-                        pbar.write(f"Exception preparing Textract parameters for: {item}")
-                        results[ix][manifest_out_field] = err
-                        increment_pstart()
-                        pbar.update(1)
-                        continue
-
-                    now = datetime.now().timestamp()
-                    if t_next_startable > now:
-                        time.sleep(t_next_startable - now)
-                    t_next_startable = (
-                        datetime.now().timestamp()
-                        + TextractSFnSubmission.inter_start_wait_secs(jobs_started)
-                    )
-
-                    try:
-                        sfn_submissions.append(
-                            TextractSFnSubmission.create(
-                                state_machine_arn=textract_sfn_arn,
-                                request=request,
-                                ix=ix,
-                            )
-                        )
-                        jobs_started += 1
-                    except Exception as err:
-                        pbar.write(f"Exception creating Textract job for: {doc_s3uri}")
-                        results[ix][manifest_out_field] = err
-                        pbar.update(1)
-                    increment_pstart()
-
-                # OUTPUT STEP: Try to query (some or all, depending on phase) results
-                input_items_queued = len(enumd_queue_items) > 0
-                if (datetime.now().timestamp() >= t_start_checking_results) and len(
-                    sfn_submissions
-                ):
-                    if input_items_queued:
-                        # When still creating jobs, our goal is to give an approximate view of
-                        # completion progress without slowing down job creation too much. We'll
-                        # randomly sample {N/40} of the earliest {1/2} of submissions to test:
-                        # Restricting to early subset because we know older executions are more
-                        # likely to have completed, but randomizing because in-order processing
-                        # is not guaranteed - so taking a deterministic approach would (badly)
-                        # under-estimate number of completed jobs.
-                        #
-                        # This length-scaled sampling approach has the added benefit of slowing
-                        # our loop down if the number of active jobs becomes >>{40}
-                        sample_ixs = np.random.choice(
-                            ceil(len(sfn_submissions) / 4),
-                            ceil(len(sfn_submissions) / 40),
-                            replace=False,
-                        )
-                    else:
-                        # When all jobs are submitted, this is the only active section of the event
-                        # loop: Check the whole list and also pause a while between loops.
-                        sample_ixs = list(range(len(sfn_submissions)))
-                        time.sleep(3)
-
-                    for ix_sub in sample_ixs:
-                        sub = sfn_submissions[ix_sub]
-                        result = sub.check_result(log_fn=pbar.write)
-                        time.sleep(0.08)
-                        if result is not None:
-                            results[sub.ix][manifest_out_field] = result
-                            sfn_submissions[ix_sub] = None
-                            pbar.update(1)
-                    sfn_submissions = list(filter(lambda s: s, sfn_submissions))
-    return results
+        raise NotImplementedError("DummyFramework does not implement 'create_model'")
 
 
 class DataManifestWarning:
@@ -761,7 +304,7 @@ def collate_data_manifest(
                     imgs_s3uri=imgs_s3_prefix,
                 )
                 if len(img_candidate_s3keys) == 0:
-                    logger.warn(
+                    logger.warning(
                         "No page images found from raw doc path '%s'... Trying from textract-ref",
                         doc_relpath,
                     )
@@ -785,16 +328,19 @@ def collate_data_manifest(
                     )
                 elif not mapped_from_raw:
                     # Couldn't map from either raw-ref or textract-ref
-                    logger.warn(
+                    logger.warning(
                         "textract-ref did not start with textract_s3_prefix and could also not "
                         "map from raw-ref / raw_s3_prefix."
                     )
 
             if img_candidate_pagenums != list(range(1, len(doc.pages) + 1)):
                 if len(img_candidate_pagenums) == 0:
-                    logger.warn("No page images found for doc, excluding from manifest:\n%s", item)
+                    logger.warning(
+                        "No page images found for doc, excluding from manifest:\n%s",
+                        item,
+                    )
                 else:
-                    logger.warn("Mismatch in doc, excluding from manifest:\n%s", item)
+                    logger.warning("Mismatch in doc, excluding from manifest:\n%s", item)
                 warnings.append(
                     DataManifestWarning(
                         textract_s3uri=rec_tex_s3uri,
@@ -842,3 +388,177 @@ def collate_data_manifest(
                     record["pages-have-content"] = pages_have_content
                 fmanifest.write(json.dumps(record) + "\n")
     return warnings
+
+
+def list_preannotated_img_paths(
+    annotations_folder: str = "data/annotations",
+    exclude_job_names: List[str] = [],
+    key_prefix: str = "data/imgs-clean/",
+) -> Set[str]:
+    """Find the set of relative image paths that have already been annotated"""
+    filepaths = set()  # Protect against introducing duplicates
+    for job_folder in os.listdir(annotations_folder):
+        if job_folder in exclude_job_names:
+            logger.info(f"Skipping excluded job {job_folder}")
+            continue
+        manifest_file = os.path.join(
+            "data",
+            "annotations",
+            job_folder,
+            "manifests",
+            "output",
+            "output.manifest",
+        )
+        if not os.path.isfile(manifest_file):
+            if os.path.isdir(os.path.join(annotations_folder, job_folder)):
+                logger.warning(f"Skipping job {job_folder}: No output manifest at {manifest_file}")
+            continue
+        with open(manifest_file, "r") as f:
+            filepaths.update(
+                [
+                    s3uri_to_relative_path(json.loads(line)["source-ref"], key_base=key_prefix)
+                    for line in f
+                ]
+            )
+    return filepaths
+
+
+def stratified_sample_first_page_examples(
+    input_manifest_path: str,
+    n_examples: int,
+    pct_first_page: float = 0.4,
+    exclude_source_ref_uris: Set[str] = set(),
+    random_seed: int = 1337,
+) -> List[dict]:
+    """Sample manifest examples, stratifying to a particular % of records with page-num 1
+
+    Parameters
+    ----------
+    input_manifest_path :
+        Input manifest file which should have at least keys "page-num" (1-based number) and
+        "source-ref" (s3://... URI) on each record.
+    n_examples :
+        Number of examples to draw for the output.
+    pct_first_page :
+        Percentage (ratio in range 0-1) of output examples which should have page-num = 1.
+    exclude_source_ref_uris :
+        Set of "source-ref" values to be excluded (i.e. already-annotated images).
+    random_seed :
+        Random number generator initialization for reproducible draws.
+    """
+    with open(input_manifest_path, "r") as fmanifest:
+        examples_all = [json.loads(line) for line in fmanifest]
+
+    # Separate and shuffle the first vs non-first pages:
+    examples_all_arefirsts = [item["page-num"] == 1 for item in examples_all]
+
+    examples_firsts = [e for ix, e in enumerate(examples_all) if examples_all_arefirsts[ix]]
+    examples_nonfirsts = [e for ix, e in enumerate(examples_all) if not examples_all_arefirsts[ix]]
+    Random(random_seed).shuffle(examples_firsts)
+    Random(random_seed).shuffle(examples_nonfirsts)
+
+    # Exclude already-annotated images:
+    filtered_firsts = [e for e in examples_firsts if e["source-ref"] not in exclude_source_ref_uris]
+    filtered_nonfirsts = [
+        e for e in examples_nonfirsts if e["source-ref"] not in exclude_source_ref_uris
+    ]
+    logger.info(
+        "Excluded %s first and %s non-first pages"
+        % (
+            len(examples_firsts) - len(filtered_firsts),
+            len(examples_nonfirsts) - len(filtered_nonfirsts),
+        )
+    )
+
+    # Draw from the filtered shuffled lists:
+    n_first_pages = round(pct_first_page * n_examples)
+    n_nonfirst_pages = n_examples - n_first_pages
+    if n_first_pages > len(filtered_firsts):
+        raise ValueError(
+            "Unable to find enough first-page records to build manifest: Wanted "
+            "%s, but only %s available from list after exclusions (%s before)"
+            % (n_first_pages, len(filtered_firsts), len(examples_firsts))
+        )
+    if n_nonfirst_pages > len(filtered_nonfirsts):
+        raise ValueError(
+            "Unable to find enough non-first-page records to build manifest: Wanted "
+            "%s, but only %s available from list after exclusions (%s before)"
+            % (n_nonfirst_pages, len(filtered_nonfirsts), len(examples_nonfirsts))
+        )
+    print(f"Taking {n_first_pages} first pages and {n_nonfirst_pages} non-first pages.")
+    selected = filtered_firsts[:n_first_pages] + filtered_nonfirsts[:n_nonfirst_pages]
+    Random(random_seed).shuffle(selected)  # Shuffle again to avoid putting all 1stP at front
+    return selected
+
+
+def consolidate_data_manifests(
+    source_manifests: List[dict],
+    output_manifest: TextIO,
+    standard_label_field: str,
+    bucket_mappings: Dict[str, str],
+    prefix_mappings: Dict[str, str],
+) -> None:
+    """Consolidate multiple SM Ground Truth manifest files, normalizing label names and S3 URIs
+
+    This function applies the following normalizations, which are often needed when combining
+    multiple SageMaker Ground Truth manifests together into one:
+    - If the jobs were created through the AWS Console with default settings, their output (labels)
+        field will likely be set to the job name. A combined manifest will need to standardize
+        labels to a single field name so all the records match.
+    - If the jobs were created in a different AWS Account or environment, their S3 URIs may
+        reference buckets and key prefixes that aren't accessible for us but are mirrored in our
+        own environment. A combined manifest will need to map these S3 URIs to the current env.
+
+    Parameters
+    ----------
+    source_manifests :
+        List of {job_name, manifest_path} entries pointing to SageMaker Ground Truth output manifest
+        files and linking them to the job names.
+    output_manifest :
+        Open file handle (i.e. via `open()`) for the consolidated manifest file to be written.
+    standard_label_field :
+        Name of the standardized label field to use in the output.
+    bucket_mappings :
+        Mappings from {original: replacement} S3 bucket names to replace in source manifests.
+    prefix_mappings :
+        Mappings from {original: replacement} S3 key prefixes to replace in source manifests.
+    """
+    for source in tqdm(source_manifests, desc="Consolidating manifests..."):
+        job_name = source["job_name"]
+        manifest_path = source["manifest_path"]
+        with open(manifest_path, "r") as fin:
+            for line in filter(lambda l: l, fin):
+                obj: dict = json.loads(line)
+
+                # Import refs by applying BUCKET_MAPPINGS and PREFIX_MAPPINGS:
+                for k in filter(lambda k: k.endswith("-ref"), obj.keys()):
+                    if not obj[k].lower().startswith("s3://"):
+                        raise RuntimeError(
+                            "Attr %s ends with -ref but does not start with 's3://'\n%s" % (k, obj)
+                        )
+                    obj_bucket, obj_key = s3uri_to_bucket_and_key(obj[k])
+                    obj_bucket = bucket_mappings.get(obj_bucket, obj_bucket)
+                    for old_prefix in prefix_mappings:
+                        if obj_key.startswith(old_prefix):
+                            obj_key = prefix_mappings[old_prefix] + obj_key[len(old_prefix) :]
+                    obj[k] = f"s3://{obj_bucket}/{obj_key}"
+
+                # Find the job output field:
+                if job_name in obj:
+                    source_label_attr = job_name
+                elif standard_label_field in obj:
+                    source_label_attr = standard_label_field
+                else:
+                    raise RuntimeError(
+                        "Couldn't find label field for entry in {}:\n{}".format(
+                            job_name,
+                            obj,
+                        )
+                    )
+                # Rename to standard:
+                obj[standard_label_field] = obj.pop(source_label_attr)
+                source_meta_attr = f"{source_label_attr}-metadata"
+                if source_meta_attr in obj:
+                    obj[f"{standard_label_field}-metadata"] = obj.pop(source_meta_attr)
+                # Write to output manifest:
+                output_manifest.write(json.dumps(obj) + "\n")

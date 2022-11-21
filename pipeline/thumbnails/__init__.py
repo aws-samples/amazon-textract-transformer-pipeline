@@ -26,10 +26,11 @@ from ..shared.sagemaker import (
     get_sagemaker_default_bucket,
     SageMakerAsyncInferenceConfig,
     SageMakerCallerFunction,
-    SageMakerSSMStep,
-    SageMakerDLCBasedImage,
     SageMakerCustomizedDLCModel,
+    SageMakerDLCBasedImage,
+    SageMakerEndpointExecutionRole,
     SageMakerModelDeployment,
+    SageMakerSSMStep,
 )
 
 
@@ -89,10 +90,9 @@ class ThumbnailGeneratorDeployment(Construct):
         self.image = image
 
         if execution_role is None:
-            execution_role = iam.Role(
+            execution_role = SageMakerEndpointExecutionRole(
                 self,
                 "ThumbnailerRole",
-                assumed_by=iam.ServicePrincipal("sagemaker.amazonaws.com"),
                 description="Role for CDK-created SageMaker endpoints in OCR Pipeline",
             )
         self.execution_role = execution_role

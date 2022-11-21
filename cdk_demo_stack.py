@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT-0
 """AWS CDK deployable stack for OCR pipeline sample
 """
+# Python Built-Ins:
+from typing import List, Optional
 
 # External Dependencies:
 from aws_cdk import CfnOutput, CfnParameter, Duration, RemovalPolicy, Stack
@@ -42,6 +44,9 @@ class PipelineDemoStack(Stack):
         default_project_id: str,
         use_thumbnails: bool,
         enable_sagemaker_autoscaling: bool = False,
+        build_sagemaker_ocrs: List[str] = [],
+        deploy_sagemaker_ocrs: List[str] = [],
+        use_sagemaker_ocr: Optional[str] = None,
         **kwargs,
     ) -> None:
         """Create a PipelineDemoStack
@@ -70,6 +75,18 @@ class PipelineDemoStack(Stack):
             will introduce cold-start delays to affected stages of the pipeline so may not be ideal
             during development. This setting does not affect endpoints created *outside* the stack
             and later plumbed in to the pipeline (i.e. endpoints deployed from notebooks).
+        build_sagemaker_ocrs :
+            List of alternative (SageMaker-based) OCR engine names to build container images and
+            SageMaker Models for in the deployed stack. By default ([]), none will be included. See
+            `CUSTOM_OCR_ENGINES` in pipeline/ocr/sagemaker_ocr.py for supported engines.
+        deploy_sagemaker_ocrs :
+            List of alternative OCR engine names to deploy SageMaker endpoints for in the stack. Any
+            names in here must also be included in `build_sagemaker_ocrs`. Default []: Support
+            Amazon Textract OCR only.
+        use_sagemaker_ocr :
+            Optional alternative OCR engine name to use in the deployed document pipeline. If set
+            and not empty, this must also be present in `build_sagemaker_ocrs` and
+            `deploy_sagemaker_ocrs`. Default None: Use Amazon Textract for initial document OCR.
         **kwargs :
             As per aws_cdk.Stack
         """
@@ -128,6 +145,9 @@ class PipelineDemoStack(Stack):
             ssm_param_prefix=f"/{self.project_id_param.value_as_string}/config/",
             use_thumbnails=use_thumbnails,
             enable_sagemaker_autoscaling=enable_sagemaker_autoscaling,
+            build_sagemaker_ocrs=build_sagemaker_ocrs,
+            deploy_sagemaker_ocrs=deploy_sagemaker_ocrs,
+            use_sagemaker_ocr=use_sagemaker_ocr,
         )
         self.data_science_policy = ManagedPolicy(
             self,

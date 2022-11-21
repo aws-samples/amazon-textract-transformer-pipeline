@@ -7,8 +7,12 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 # Core dependencies:
+# - Pin PyTorch to prevent pip accidentally re-installing/upgrading it via detectron
+# - Pin setuptools per https://github.com/pytorch/pytorch/issues/69894#issuecomment-1080635462
 RUN pip install "amazon-textract-response-parser>=0.1,<0.2" "Pillow>=8,<9" \
-    && pip install git+https://github.com/facebookresearch/detectron2.git
+    && PT_VER=`pip show torch | grep 'Version:' | sed 's/Version: //'` \
+    && pip install git+https://github.com/facebookresearch/detectron2.git setuptools==59.5.0 \
+        torch==$PT_VER
 
 # Could also consider installing detectron2 via pre-built Linux wheel, depending on the PyTorch and
 # CUDA versions of your base container:
@@ -25,7 +29,8 @@ RUN pip install "amazon-textract-response-parser>=0.1,<0.2" "Pillow>=8,<9" \
 # - datasets 1.18 and torchvision 0.11 are installed in the HF training container but missing from
 #   the inference container, and we need them for inference. Upgraded datasets to use some new
 #   logging controls and debug multi-worker .map() pre-processing:
-RUN pip install pytesseract "datasets==2.2.1" "torchvision>=0.11.3,<0.12"
+RUN PT_VER=`pip show torch | grep 'Version:' | sed 's/Version: //'` \
+    && pip install pytesseract "datasets==2.2.1" "torchvision>=0.11.3,<0.12" torch==$PT_VER
 
 
 # If you'd like to enable this container as a Custom Image for notebook kernels, for debugging in

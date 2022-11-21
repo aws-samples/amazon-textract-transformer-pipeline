@@ -1,6 +1,6 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-"""Top-level entrypoint script for image/document pre-processing
+"""Top-level entrypoint script for alternative OCR engines
 """
 # Python Built-Ins:
 import logging
@@ -16,7 +16,7 @@ def run_main():
     )
     logging.basicConfig(handlers=[consolehandler], level=os.environ.get("LOG_LEVEL", logging.INFO))
 
-    from textract_transformers.preproc import main
+    from textract_transformers.ocr import main
 
     return main()
 
@@ -28,4 +28,4 @@ if __name__ == "__main__":
 else:
     # If the file is imported as a module, we're in inference mode and should pass through the
     # override functions defined in the inference module.
-    from textract_transformers.preproc import *
+    from textract_transformers.ocr import *

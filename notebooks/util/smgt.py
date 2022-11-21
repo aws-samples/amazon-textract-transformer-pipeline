@@ -5,6 +5,7 @@
 
 # Python Built-Ins:
 import json
+from logging import getLogger
 import os
 from string import Template
 from textwrap import dedent
@@ -19,6 +20,8 @@ from .postproc.config import FieldConfiguration
 botosess = boto3.Session()
 s3 = botosess.resource("s3")
 smclient = botosess.client("sagemaker")
+
+logger = getLogger("smgt")
 
 
 # Lambda function ARN components for pre- and post-processing with built-in task types, as per:
@@ -100,6 +103,61 @@ BBOX_INITIAL_VALUE_TEMPLATE = """initial-value="[
   {% endfor %}
 ]"
 """
+
+
+def ensure_bucket_cors(
+    bucket_name: str,
+    aws_account_id: str = os.environ.get("AWS_ACCOUNT_ID"),
+) -> Optional[dict]:
+    """Ensure S3 bucket has a GET * CORS rule as required by SageMaker Ground Truth
+
+    Parameters
+    ----------
+    bucket_name :
+        Name of the S3 bucket to configure. You must have s3:GetBucketCors and s3:PutBucketCors
+        permissions on this bucket.
+    aws_account_id :
+        AWS Account ID. If not provided, will attempt to determine from AWS_ACCOUNT_ID environment
+        variable.
+
+    Returns
+    -------
+    resp :
+        An S3 PutBucketCors response if a rule was added, else None if a rule was already
+        present.
+    """
+    bucket_cors = s3.BucketCors(bucket_name)
+
+    try:
+        existing_rules = bucket_cors.cors_rules
+    except s3.meta.client.exceptions.ClientError as err:
+        if err.response.get("Error", {}).get("Code") == "NoSuchCORSConfiguration":
+            existing_rules = []
+        else:
+            raise err
+
+    if any(
+        r for r in existing_rules if "*" in r["AllowedOrigins"] and "GET" in r["AllowedMethods"]
+    ):
+        logger.info(f"Bucket already set up with CORS permissions: %s", bucket_name)
+        return None
+    else:
+        new_rules = existing_rules + [
+            {
+                "ID": "SageMakerGroundTruth",
+                "AllowedHeaders": [],
+                "AllowedMethods": ["GET"],
+                "AllowedOrigins": ["*"],
+                "ExposeHeaders": [],
+                "MaxAgeSeconds": 60,
+            },
+        ]
+        cors_resp = bucket_cors.put(
+            CORSConfiguration={"CORSRules": new_rules},
+            ExpectedBucketOwner=aws_account_id,
+        )
+        logger.info("Added CORS permissions to bucket: %s", bucket_name)
+        return cors_resp
 
 
 def get_smgt_lambda_arn(

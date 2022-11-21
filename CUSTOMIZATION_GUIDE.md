@@ -6,13 +6,21 @@ This file contains suggestions and considerations to help you apply and customiz
 
 ## Contents
 
-1. [Bring your own dataset guidance](#Bring-your-own-dataset--Getting-started-step-by-step)
-1. [Customizing the pipeline](#Customizing-the-pipeline)
-1. [Customizing the models](#Customizing-the-models)
+1. [Bring your own dataset guidance](#byo-data)
+1. [Customizing the pipeline](#customizing-pipeline)
+    - [Skipping page image generation (optimizing for LayoutLMv1)](#skip-thumbnails)
+    - [Auto-scaling SageMaker endpoints](#auto-scaling)
+    - [Handling large documents (or optimizing for small ones)](#handling-large-docs)
+    - [Using Amazon Textract `TABLES` and `FORMS` features in the pipeline](#using-analyzedocument-features)
+    - [Using alternative OCR engines](#altern-ocr)
+1. [Customizing the models](#customizing-models)
+    - [How much data do I need?](#how-much-data)
+    - [Should I pre-train to my domain, or just fine-tune?](#should-i-pre-train)
+    - [Scaling and optimizing model training](#optimizing-model-training)
 
 ---
 
-## Bring your own dataset: Getting started step-by-step
+## Bring your own dataset: Getting started step-by-step<a id='byo-data'></a>
 
 So you've cloned this repository and reviewed the "Getting started" installation steps on [the README](README.md) - How can you get started with your own dataset instead of the credit card agreements example?
 
@@ -68,7 +76,7 @@ Configuring a large number of `fields` may increase required memory footprint of
 
 ### Step 6: Enabling batch Textract features (if you want them)
 
-In the *Textract the input documents* section of notebook 1, you'll see by default `features=[]` to optimize costs - since the SageMaker model and sample post-processing Lambda do not use or depend on additional Amazon Textract features like `TABLES` and `FORMS`.
+In the *OCR the input documents* section of notebook 1, you'll see by default `features=[]` to optimize costs - since the SageMaker model and sample post-processing Lambda do not use or depend on additional Amazon Textract features like `TABLES` and `FORMS`.
 
 If you'd like to enable these extra analyses for your batch processing in the notebook, set e.g. `features=["FORMS", "TABLES"]`. This setting is for the batch analysis only and does not affect the online behaviour of the deployed pipeline.
 
@@ -88,16 +96,16 @@ If your dataset is particularly tiny (more like e.g. 30 labelled pages than 100)
 
 ---
 
-## Customizing the pipeline
+## Customizing the pipeline<a id='customizing-pipeline'></a>
 
-### Skipping page image generation (optimizing for LayoutLMv1)
+### Skipping page image generation (optimizing for LayoutLMv1)<a id='skip-thumbnails'></a>
 
 By default, the deployed pipeline will invoke a page thumbnail image generation endpoint in parallel to running input documents through Amazon Textract. These are useful additional inputs for some model architectures supported by the pipeline (e.g. LayoutLMv2, LayoutXLM), but are not required or used by LayoutLMv1.
 
 If you know you'll be using the pipeline with LayoutLMv1 models only, you can `export USE_THUMBNAILS=false` before deploying your app (or edit [cdk_app.py](cdk_app.py) to set `use_thumbnails=False`) to remove the parallel thumbnailing step from the pipeline. When the pipeline is deployed with the default `use_thumbnails=True`, it will fail unless a thumbnailing endpoint is properly configured (via SSM as shown in [notebook 2](notebooks/2.%20Model%20Training.ipynb)).
 
 
-### Auto-scaling SageMaker endpoints
+### Auto-scaling SageMaker endpoints<a id='auto-scaling'></a>
 
 If your pipeline will see variable load - *especially* if there will be long periods where no documents are submitted at all - then you might be interested to optimise resource use and cost by enabling infrastructure auto-scaling on deployed SageMaker endpoints.
 
@@ -106,7 +114,7 @@ Scaling down to 0 instances during idle periods is [supported](https://docs.aws.
 For endpoints automatically deployed by the CDK app, you can control whether auto-scaling is set up via the `ENABLE_SM_AUTOSCALING` environment variable or the `enable_sagemaker_autoscaling` argument in [cdk_app.py](cdk_app.py). For instructions to set up auto-scaling on your manually-created endpoints, see [notebooks/Optional Extras.ipynb](notebooks/Optional%20Extras.ipynb).
 
 
-### Handling large documents (or optimizing for small ones)
+### Handling large documents (or optimizing for small ones)<a id='handling-large-docs'></a>
 
 Because some components of the pipeline have configured timeouts or process consolidated document Textract JSON in memory, scaling to very large documents (e.g. hundreds of pages) may require some configuration changes in the CDK solution.
 
@@ -119,7 +127,7 @@ Consider:
 Conversely if you know up-front your use case will handle only images or short documents, you may be able to reduce these settings from the defaults to save costs.
 
 
-### Using Amazon Textract `TABLES` and `FORMS` features in the pipeline
+### Using Amazon Textract `TABLES` and `FORMS` features in the pipeline<a id='using-analyzedocument-features'></a>
 
 The sample SageMaker model and post-processing Lambda function neither depend on nor use the additional [tables](https://docs.aws.amazon.com/textract/latest/dg/how-it-works-tables.html) and [forms](https://docs.aws.amazon.com/textract/latest/dg/how-it-works-kvp.html) features of Amazon Textract and therefore by default they're disabled in the pipeline.
 
@@ -134,11 +142,45 @@ For example you could loop through the rows and cells of detected `TABLE`s in yo
 
 If you need to change the output format for the post-processing Lambda function, note that the A2I human review template will likely also need to be updated.
 
+
+### Using alternative OCR engines<a id='altern-ocr'></a>
+
+For the highest accuracy, broadest feature set, and least maintenance overhead on supported languages - you'll typically want to use the [Amazon Textract service](https://aws.amazon.com/textract/) for raw document text extraction, which is the default for this solution.
+
+Some use-cases may want to explore other options though: Particularly if you're dealing with **low-resource-languages** not currently supported by Textract (see *"What type of text can Amazon Textract detect and extract?"* in the [service FAQ](https://aws.amazon.com/textract/faqs/)). In general, if your documents use an unsupported language but a *supported character* set (for example **Indonesian**), you'll be better off using Amazon Textract... But if your documents rely heavily on **unsupported characters** (for example **Thai**), an alternative will be needed.
+
+This solution includes integration points for deploying alternative, open-source-based OCR engines on Amazon SageMaker endpoints: And an example integration with [Tesseract OCR](https://github.com/tesseract-ocr/tesseract).
+
+**To deploy and use the Tesseract OCR engine:**
+
+1. Configure the default languages for Tesseract:
+    - Edit `CUSTOM_OCR_ENGINES` in [pipeline/ocr/sagemaker_ocr.py](pipeline/ocr/sagemaker_ocr.py) to set `OCR_DEFAULT_LANGUAGES` to the comma-separated [Tesseract language codes](https://tesseract-ocr.github.io/tessdoc/Data-Files-in-different-versions.html) needed for your use-case.
+    - ⚠️ This languages parameter is not exposed through the CloudFormation bootstrap stack. If you're using that to run your CDK deployment, you'll need to fork and edit the repository.
+1. Before (re)-running `cdk deploy`:
+    - Configure your CDK stack to **build** a Tesseract container & SageMaker Model: `export BUILD_SM_OCRS=tesseract`, or refer to the `build_sagemaker_ocrs` parameter in [cdk_app.py](cdk_app.py)
+    - Configure your CDK stack to **deploy** a SageMaker endpoint for Tesseract: `export DEPLOY_SM_OCRS=tesseract`, or refer to the `deploy_sagemaker_ocrs` parameter in cdk_app.py.
+    - Configure your CDK pipeline to **use** a SageMaker endpoint instead of Amazon Textract: `export USE_SM_OCR=tesseract`, or refer to the `use_sagemaker_ocr` parameter in cdk_app.py.
+    - If you're using the CloudFormation bootstrap stack for this example, you can configure these parameters via CloudFormation.
+
+**To integrate other custom/alternative OCR engines via SageMaker:**
+
+- Add your own entries to `CUSTOM_OCR_ENGINES` in [pipeline/ocr/sagemaker_ocr.py](pipeline/ocr/sagemaker_ocr.py), which defines the container image, script bundle location, environment variables, and other configurations - to be used for each possible engine.
+    - You can refer to the existing `tesseract` definition for an example, and choose your own name for your custom engine.
+    - You may like to re-use and extend the existing [Dockerfile](notebooks/custom-containers/preproc/Dockerfile), which is already parameterized to optionally install Tesseract via a build arg.
+- Develop your integration scripts in [notebooks/preproc/textract_transformers/ocr_engines](notebooks/preproc/textract_transformers/ocr_engines):
+    - Create a new `eng_***.py` script to define your engine, using the existing [eng_tesseract.py](notebooks/preproc/textract_transformers/ocr_engines/eng_tesseract.py) as a guide.
+    - Your script should define one class based on `base.BaseOCREngine`, implementing the `process()` method with the expected arguments and return type.
+    - Your `process()` method should return an Amazon Textract-compatible (JSONable) dictionary. Use the `generate_response_json()` utility and other classes from [base.py](notebooks/preproc/textract_transformers/ocr_engines/base.py) to help with this.
+- Once your engine is ready, you can deploy it into your stack with `BUILD_SM_OCRS`, `DEPLOY_SM_OCRS` and `USE_SM_OCR` as described above.
+    - Note that the build and deploy options support multiple engines (comma-separated string), which you can use to test out alternative model and endpoint deployments. However, the stack can only use one OCR engine (or Amazon Textract) at a time.
+- 🚀 Feel free to pull-request your alternative integrations!
+
+
 ---
 
-## Customizing the models
+## Customizing the models<a id='customizing-models'></a>
 
-### How much data do I need?
+### How much data do I need?<a id='how-much-data'></a>
 
 As demonstrated in the credit card agreements example, the answer to this question is strongly affected by how "hard" your particular extraction problem is for the model. Particular factors that can make learning difficult include:
 
@@ -151,7 +193,7 @@ A practical solution is to start small, and **run experiments with varying hold-
 Depending on your task and document diversity, you may be able to start getting an initial idea of what seems "easy" with as few as 20 annotated pages, but may need hundreds to get a more confident view of what's "hard".
 
 
-### Should I pre-train to my domain, or just fine-tune?
+### Should I pre-train to my domain, or just fine-tune?<a id='should-i-pre-train'></a>
 
 Because much more un-labelled domain data (Textracted documents) is usually available than labelled data (pages with manual annotations) for a use case, the compute infrastructure and/or time required for pre-training is usually significantly larger than fine-tuning jobs.
 
@@ -167,7 +209,7 @@ There may be other factors aside from accuracy that influence your decision to p
 - **Privacy** - In some specific circumstances (for example [*"Extracting Training Data from Large Language Models", 2020*](https://arxiv.org/abs/2012.07805)) it has been shown that input data can be reverse-engineered from trained large language models. Protections against this may be required, depending how your model is exposed to users.
 
 
-### Scaling and optimizing model training
+### Scaling and optimizing model training<a id='optimizing-model-training'></a>
 
 While fine-tuning is often practical on a single-GPU instance like `ml.g4dn.xlarge` or `ml.p3.2xlarge`, you'll probably be interested in scaling up for the larger datasets involved in pre-training. Here are some tips to be aware of:
 

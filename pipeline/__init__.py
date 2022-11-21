@@ -30,7 +30,7 @@ from .iam_utils import (
     SsmParameterReadStatement,
     SsmParameterWriteStatement,
 )
-from .ocr import TextractOcrStep
+from .ocr import OCRStep
 from .postprocessing import LambdaPostprocStep
 from .review import A2IReviewStep
 from .shared import abs_path
@@ -38,6 +38,7 @@ from .shared.sagemaker import (
     get_sagemaker_default_bucket,
     SageMakerCallerFunction,
     SageMakerDLCBasedImage,
+    SageMakerDLCSpec,
 )
 from .thumbnails import GenerateThumbnailsStep
 
@@ -59,6 +60,9 @@ class ProcessingPipeline(Construct):
         ssm_param_prefix: Union[Token, str],
         use_thumbnails: bool = True,
         enable_sagemaker_autoscaling: bool = False,
+        build_sagemaker_ocrs: List[str] = [],
+        deploy_sagemaker_ocrs: List[str] = [],
+        use_sagemaker_ocr: Optional[str] = None,
         **kwargs,
     ):
         """Create a ProcessingPipeline
@@ -88,6 +92,18 @@ class ProcessingPipeline(Construct):
             will introduce cold-start delays to affected stages of the pipeline so may not be ideal
             during development. This setting does not affect endpoints created *outside* the stack
             and later plumbed in to the pipeline (i.e. endpoints deployed from notebooks).
+        build_sagemaker_ocrs :
+            List of alternative (SageMaker-based) OCR engine names to build container images and
+            SageMaker Models for in the deployed stack. By default ([]), none will be included. See
+            `CUSTOM_OCR_ENGINES` in pipeline/ocr/sagemaker_ocr.py for supported engines.
+        deploy_sagemaker_ocrs :
+            List of alternative OCR engine names to deploy SageMaker endpoints for in the stack. Any
+            names in here must also be included in `build_sagemaker_ocrs`. Default []: Support
+            Amazon Textract OCR only.
+        use_sagemaker_ocr :
+            Optional alternative OCR engine name to use in the deployed document pipeline. If set
+            and not empty, this must also be present in `build_sagemaker_ocrs` and
+            `deploy_sagemaker_ocrs`. Default None: Use Amazon Textract for initial document OCR.
         **kwargs : Any
             Passed through to parent Construct
         """
@@ -175,19 +191,28 @@ class ProcessingPipeline(Construct):
             file="Dockerfile",
             ecr_repo="sm-ocr-preprocs",
             ecr_tag="pytorch-1.10-inf-cpu",
-            framework="pytorch",
-            use_gpu=False,
-            image_scope="inference",
-            py_version="py38",
-            version="1.10",
+            base_image_spec=SageMakerDLCSpec(
+                framework="pytorch",
+                use_gpu=False,
+                image_scope="inference",
+                py_version="py38",
+                version="1.10",
+            ),
         )
 
-        self.ocr_step = TextractOcrStep(
+        self.ocr_step = OCRStep(
             self,
             "OCRStep",
             lambda_role=self.shared_lambda_role,
+            ssm_param_prefix=ssm_param_prefix,
+            input_bucket=self.input_bucket,
             output_bucket=self.textract_results_bucket,
             output_prefix="textract",
+            build_sagemaker_ocrs=build_sagemaker_ocrs,
+            deploy_sagemaker_ocrs=deploy_sagemaker_ocrs,
+            use_sagemaker_ocr=use_sagemaker_ocr,
+            enable_sagemaker_autoscaling=enable_sagemaker_autoscaling,
+            shared_sagemaker_caller_lambda=self.shared_sagemaker_lambda,
         )
         if use_thumbnails:
             self.thumbnails_step = GenerateThumbnailsStep(
@@ -208,10 +233,10 @@ class ProcessingPipeline(Construct):
             self.thumbnails_step = None
             ocr_preproc_states = [self.ocr_step.sfn_task]
 
-        # You could optimize out this Parallel if you're always going to run only the Textract
-        # step at this point, but it helps for an agnostic solution because it can be tricky to
+        # You could optimize out this Parallel if you're always going to run only the OCR step at
+        # this point, but it helps for an agnostic solution because it can be tricky to
         # simultaneously select a subset of the state output and map it to a subkey of the state
-        # inside TextractOcrStep.
+        # inside the OCR step.
         ocr_preproc = sfn.Parallel(
             self,
             "OCRAndPreProcessing",

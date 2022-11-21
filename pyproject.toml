@@ -4,16 +4,16 @@ line-length = 100
 
 [tool.poetry]
 name = "amazon-textract-transformer-pipeline"
-version = "0.2.0"
+version = "0.2.1"
 description = "Post-processing Amazon Textract with Transformer-Based Models on Amazon SageMaker"
 authors = ["Amazon Web Services"]
 license = "MIT-0"
 
 [tool.poetry.dependencies]
 python = "^3.8.0"
-aws-cdk-lib = "^2.18.0"
-"aws-cdk.aws-lambda-python-alpha" = "^2.18.0-alpha.0"
-boto3 = "^1.17.92"
+aws-cdk-lib = "^2.46.0"
+"aws-cdk.aws-lambda-python-alpha" = "^2.46.0-alpha.0"
+boto3 = "^1.24.0"
 cdk-ecr-deployment = "^2.5.6"
 constructs = "^10.0.101"
 sagemaker = ">=2.87,<3"
