@@ -47,7 +47,7 @@ To deploy this sample you'll need access to your target AWS Account with suffici
 
 Steps 0-3 below are for locally building and deploying the CDK solution and require setting up some developer-oriented tools. If you can't do this or prefer not to, you can **deploy the following "bootstrap" CloudFormation stack and skip to step 4**:
 
-[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/create/review?templateURL=https://s3.amazonaws.com/amazon-textract-transformer-pipeline-assets/attp-bootstrap-altocr.cfn.yaml&stackName=ATTPBootstrap "Launch Stack") (Or use [.infrastructure/attp-bootstrap.cfn.yaml](.infrastructure/attp-bootstrap.cfn.yaml))
+[![Launch Stack](https://s3.amazonaws.com/cloudformation-examples/cloudformation-launch-stack.png)](https://console.aws.amazon.com/cloudformation/home?#/stacks/create/review?templateURL=https://s3.amazonaws.com/amazon-textract-transformer-pipeline-assets/attp-bootstrap.cfn.yaml&stackName=ATTPBootstrap "Launch Stack") (Or use [.infrastructure/attp-bootstrap.cfn.yaml](.infrastructure/attp-bootstrap.cfn.yaml))
 
 > ⚠️ **Note** before using this option:
 > - This bootstrap stack grants broad IAM permissions to the created AWS CodeBuild project role for deploying the sample - so it's **not recommended for use in production environments.**
