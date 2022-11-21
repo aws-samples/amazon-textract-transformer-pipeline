@@ -10,7 +10,6 @@ from typing import Dict, List, Optional, Union
 from aws_cdk import CfnTag, Duration, Token
 import aws_cdk.aws_iam as iam
 from aws_cdk.aws_s3 import Bucket
-import aws_cdk.aws_sagemaker as sm
 import aws_cdk.aws_sns as sns
 import aws_cdk.aws_ssm as ssm
 import aws_cdk.aws_stepfunctions as sfn
@@ -276,9 +275,7 @@ class SageMakerOCRStep(Construct):
             parameter_name=f"{ssm_param_prefix}SMOCREndpointName",
             simple_name=False,
             string_value=(
-                self.deployments[use_engine_name].endpoint_name
-                if use_engine_name
-                else "undefined"
+                self.deployments[use_engine_name].endpoint_name if use_engine_name else "undefined"
             ),
         )
         lambda_role.add_to_policy(
