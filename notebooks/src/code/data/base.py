@@ -496,12 +496,13 @@ def prepare_base_dataset(
         ds_raw = datasets.Dataset.from_dict(
             {
                 "textract-ref": [
-                    os.path.join(currpath, file)
+                    # Output paths *relative* to textract_path:
+                    os.path.join(os.path.relpath(currpath, textract_path), file)
                     for currpath, _, files in os.walk(textract_path)
                     for file in files
                 ]
             },
-            cache_dir=cache_dir,
+            # At writing, from_dict() doesn't support setting cache_dir
         )
 
     if not datasets.utils.is_progress_bar_enabled():
