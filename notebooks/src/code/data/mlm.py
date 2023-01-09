@@ -54,20 +54,20 @@ class TextractLayoutLMDataCollatorForLanguageModelling(
 
         # Configuration diagnostics:
         if self.tim_probability > 0:
-            if "image_mask_label" not in self.model_param_names:
+            if self.model_param_names is None or "image_mask_label" not in self.model_param_names:
                 logger.warning(
                     "model_param_names does not contain image_mask_label: Ignoring configured "
                     "tim_probability. Text-Image Matching will be disabled."
                 )
-        elif "image_mask_label" in self.model_param_names:
+        elif self.model_param_names is not None and ("image_mask_label" in self.model_param_names):
             logger.warning("Pre-training with Text-Image Matching disabled (tim_probability = 0)")
         if self.tiam_probability > 0:
-            if "imline_mask_label" not in self.model_param_names:
+            if self.model_param_names is None or "imline_mask_label" not in self.model_param_names:
                 logger.warning(
                     "model_param_names does not contain imline_mask_label: Ignoring configured "
                     "tiam_probability. Text-Image Alignment will be disabled."
                 )
-        elif "imline_mask_label" in self.model_param_names:
+        elif self.model_param_names is not None and "imline_mask_label" in self.model_param_names:
             logger.warning("Pre-training with Text-Image Alignment disabled (tiam_probability = 0)")
 
         return super().__post_init__()
@@ -80,6 +80,22 @@ class TextractLayoutLMDataCollatorForLanguageModelling(
     def tf_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
         raise NotImplementedError(
             "Custom Textract MLM data collator has not been implemented for TensorFlow"
+        )
+
+    def _is_tia_enabled(self) -> bool:
+        """Safely check whether current configuration enables Text-Image Alignment (TIA) task"""
+        return (
+            self.model_param_names is not None
+            and self.tiam_probability > 0
+            and "imline_mask_label" in self.model_param_names
+        )
+
+    def _is_tim_enabled(self) -> bool:
+        """Safely check whether current configuration enables Text-Image Matching (TIM) task"""
+        return (
+            self.model_param_names is not None
+            and self.tim_probability > 0
+            and "image_mask_label" in self.model_param_names
         )
 
     def torch_call(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -126,7 +142,7 @@ class TextractLayoutLMDataCollatorForLanguageModelling(
             # (This fn is cheap to call if TIM is turned off)
             image_mask_labels, image_indices = self.torch_permute_images(tokenized["image"])
 
-            if ("imline_mask_label" in self.model_param_names) and (self.tiam_probability > 0):
+            if self._is_tia_enabled():
                 # Text Image Alignment (TIA): For each image in the batch (including reassigned
                 # ones), mask some text in the image.
                 masked_images = []
@@ -164,7 +180,7 @@ class TextractLayoutLMDataCollatorForLanguageModelling(
                 shuffled_images = tokenized["image"][image_indices]
                 tokenized["image"] = shuffled_images
 
-            if ("image_mask_label" in self.model_param_names) and (self.tim_probability > 0):
+            if self._is_tim_enabled():
                 tokenized["image_mask_label"] = image_mask_labels
 
         return tokenized
@@ -327,7 +343,16 @@ def get_task(
     """Load datasets and data collators for MLM model training"""
     logger.info("Getting MLM datasets")
     # We only need to track line IDs for each word when TIAM is enabled:
-    tiam_enabled = ("imline_mask_label" in model_param_names) and (data_args.tiam_probability > 0)
+    if model_param_names is None:
+        tiam_enabled = False
+        logger.warning(
+            "Skipping generation of text line IDs in dataset: Since model_param_names is not "
+            "provided, we don't know if this field is required/supported by the model."
+        )
+    else:
+        tiam_enabled = ("imline_mask_label" in model_param_names) and (
+            data_args.tiam_probability > 0
+        )
     train_dataset = prepare_dataset(
         data_args.textract,
         tokenizer=tokenizer,
