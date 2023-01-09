@@ -7,7 +7,7 @@
 from dataclasses import dataclass, field
 import os
 import tarfile
-from typing import Optional
+from typing import Optional, Sequence, Tuple
 
 # External Dependencies:
 try:
@@ -19,15 +19,15 @@ from transformers import HfArgumentParser, TrainingArguments
 from transformers.trainer_utils import IntervalStrategy
 
 
-def get_n_cpus():
+def get_n_cpus() -> int:
     return int(os.environ.get("SM_NUM_CPUS", len(os.sched_getaffinity(0))))
 
 
-def get_n_gpus():
+def get_n_gpus() -> int:
     return int(os.environ.get("SM_NUM_GPUS", 0))
 
 
-def get_default_num_workers():
+def get_default_num_workers() -> int:
     """Choose a sensible default dataloader_num_workers based on available hardware"""
     n_cpus = get_n_cpus()
     n_gpus = get_n_gpus()
@@ -91,14 +91,15 @@ class SageMakerTrainingArguments(TrainingArguments):
         metadata={"help": "TQDM progress bars are disabled by default for SageMaker/CloudWatch."},
     )
     do_eval: bool = field(
-        # Users should not set this typical param directly
-        default=True,
+        default=None,
         metadata={
-            "help": "This value is overridden by presence or absence of the `validation` channel"
+            "help": (
+                "This value is normally set by the presence or absence of the 'validation' "
+                "channel, but can be explicitly overridden."
+            )
         },
     )
     do_train: bool = field(
-        # Users should not set this typical param directly
         default=True,
         metadata={"help": "Set false to disable training (for validation-only jobs)"},
     )
@@ -344,7 +345,8 @@ class DataTrainingArguments:
         default="ner",
         metadata={
             "help": "The name of the task. This script currently supports 'ner' for entity "
-            "recognition or 'mlm' for pre-training (masked language modelling)."
+            "recognition, 'mlm' for pre-training (masked language modelling), or 'seq2seq' for "
+            "experimental (non-layout-aware) sequence-to-sequence data normalizations."
         },
     )
     textract: Optional[str] = field(
@@ -408,19 +410,24 @@ class DataTrainingArguments:
     )
 
     def __post_init__(self):
-        if not self.textract:
-            raise ValueError("'textract' (Folder of Textract result JSONs) channel is mandatory")
         self.task_name = self.task_name.lower()
+        if (not self.textract) and (self.task_name != "seq2seq"):
+            raise ValueError("'textract' (Folder of Textract result JSONs) channel is mandatory")
 
 
-def parse_args(cmd_args=None):
+def parse_args(
+    cmd_args: Optional[Sequence[str]] = None,
+) -> Tuple[ModelArguments, DataTrainingArguments, SageMakerTrainingArguments]:
     """Parse config arguments from the command line, or cmd_args instead if supplied"""
 
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, SageMakerTrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses(args=cmd_args)
 
-    # Auto-set activities depending which channels were provided:
-    training_args.do_eval = bool(data_args.validation)
+    # Auto-set activities depending which channels were provided.
+    # By only overriding do_eval if it's not explicitly specified, we allow override e.g. to force
+    # validation in a job where no external dataset is provided but a synthetic one can be generated
+    if training_args.do_eval is None:
+        training_args.do_eval = bool(data_args.validation)
     if not training_args.do_eval:
         training_args.evaluation_strategy = "no"
 
