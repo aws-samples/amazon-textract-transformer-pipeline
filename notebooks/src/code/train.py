@@ -221,8 +221,8 @@ def train(
                 # https://sagemaker.readthedocs.io/en/stable/api/training/smd_data_parallel_use_sm_pysdk.html
                 # For SM Distributed, ddp_launcher.py is not necessary - point straight to train.py
 
-        # Tokenizer check: this script requires a fast tokenizer.
-        if not isinstance(tokenizer, PreTrainedTokenizerFast):
+        # Tokenizer check: Our MLM/NER data prep requires a fast tokenizer.
+        if data_args.task_name in ("mlm", "ner") and not isinstance(tokenizer, PreTrainedTokenizerFast):
             raise ValueError(
                 "This example script only works for models that have a fast tokenizer. See the list "
                 "at https://huggingface.co/transformers/index.html#supported-frameworks for details."
