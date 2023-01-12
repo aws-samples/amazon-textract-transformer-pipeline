@@ -58,19 +58,21 @@ class DateFormatConfig:
 # Format configuration for synthetic date normalization training data generation
 DATE_FORMAT_CONFIGS = [
     DateFormatConfig("%Y-%m-%d", "YYYY-MM-DD", observed_weight=0.1, target_weight=0.7),
-    DateFormatConfig("%d/%m/%y", "DD/MM/YY", observed_weight=0.35, target_weight=0.05),
-    DateFormatConfig("%d/%m/%Y", "DD/MM/YYYY", observed_weight=0.35, target_weight=0.2),
-    DateFormatConfig("%m/%d/%y", "MM/DD/YY", observed_weight=0.1, target_weight=0.02),
-    DateFormatConfig("%m/%d/%Y", "MM/DD/YYYY", observed_weight=0.05, target_weight=0.03),
-    # Including day names:
-    DateFormatConfig("%a %d %b %y", "DDD DD MM YY", observed_weight=0.05, target_weight=0.0),
-    DateFormatConfig("%a. %d %b %y", "DDD. DD MM YY", observed_weight=0.05, target_weight=0.0),
-    DateFormatConfig("%A %b %d %y", "DDDD MM DD YY", observed_weight=0.01, target_weight=0.0),
-    DateFormatConfig("%A %b %d %y", "DDDD MM DDst YY", observed_weight=0.01, target_weight=0.0),
-    DateFormatConfig("%A %b %d %y", "DDDD MM DDnd YY", observed_weight=0.01, target_weight=0.0),
-    DateFormatConfig("%A %b %d %y", "DDDD MM DDrd YY", observed_weight=0.01, target_weight=0.0),
-    DateFormatConfig("%A %b %d %y", "DDDD MM DDth YY", observed_weight=0.01, target_weight=0.0),
-    DateFormatConfig("%A, %b %d %y", "DDDD, MM DD YY", observed_weight=0.02, target_weight=0.0),
+    DateFormatConfig("%m/%d/%y", "MM/DD/YY", observed_weight=0.35, target_weight=0.05),
+    DateFormatConfig("%m/%d/%Y", "MM/DD/YYYY", observed_weight=0.35, target_weight=0.2),
+    DateFormatConfig("%d/%m/%y", "DD/MM/YY", observed_weight=0.05, target_weight=0.02),
+    DateFormatConfig("%d/%m/%Y", "DD/MM/YYYY", observed_weight=0.04, target_weight=0.03),
+    # Including day names and month names:
+    DateFormatConfig("%A %b %d %y", "DDDD MMM DD YY", observed_weight=0.03, target_weight=0.0),
+    DateFormatConfig("%A, %b %d %y", "DDDD, MMM DD YY", observed_weight=0.02, target_weight=0.0),
+    DateFormatConfig("%a %b %d, %y", "DDD MMM DD, YY", observed_weight=0.02, target_weight=0.0),
+    DateFormatConfig("%a. %b %d %y", "DDD. MMM DD YY", observed_weight=0.02, target_weight=0.0),
+    DateFormatConfig("%A %b %d %y", "DDDD MMM DDst YY", observed_weight=0.01, target_weight=0.0),
+    DateFormatConfig("%A %b %d %y", "DDDD MMM DDnd YY", observed_weight=0.01, target_weight=0.0),
+    DateFormatConfig("%A %b %d %y", "DDDD MMM DDrd YY", observed_weight=0.01, target_weight=0.0),
+    DateFormatConfig("%A %b %d %y", "DDDD MMM DDth YY", observed_weight=0.01, target_weight=0.0),
+    DateFormatConfig("%a %d %b %y", "DDD DD MMM YY", observed_weight=0.02, target_weight=0.0),
+    DateFormatConfig("%a. %d %b %y", "DDD. DD MMM YY", observed_weight=0.02, target_weight=0.0),
     # Including times:
     DateFormatConfig(
         "%Y-%m-%d %H:%M:%S", "YYYY-MM-DD HH:mm:ss", observed_weight=0.02, target_weight=0.0
