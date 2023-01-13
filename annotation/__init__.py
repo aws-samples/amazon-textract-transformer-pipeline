@@ -192,9 +192,10 @@ class AnnotationInfra(Construct):
         self._pre_lambda = PythonFunction(
             self,
             # Include 'LabelingFunction' in the name so the entities with the
-            # AmazoSageMakerGroundTruthExecution policy will automatically have access to call it:
+            # AmazonSageMakerGroundTruthExecution policy will automatically have access to call it:
             # https://console.aws.amazon.com/iam/home?#/policies/arn:aws:iam::aws:policy/AmazonSageMakerGroundTruthExecution
-            "SMGT-LabelingFunction-Pre",
+            # (Of course this won't work if construct so deeply nested the name is cut off)
+            "PreLabelingFunction",
             entry=PRE_LAMBDA_PATH,
             index="main.py",
             handler="handler",
@@ -205,7 +206,7 @@ class AnnotationInfra(Construct):
         )
         self._post_lambda = PythonFunction(
             self,
-            "SMGT-LabelingFunction-Post",
+            "PostLabelingFunction",
             entry=POST_LAMBDA_PATH,
             index="main.py",
             handler="handler",
@@ -246,5 +247,16 @@ class AnnotationInfra(Construct):
                 ],
                 effect=Effect.ALLOW,
                 resources=["arn:aws:codebuild:*:*:project/sagemaker-studio*"],
+            ),
+            PolicyStatement(
+                sid="InvokeCustomSMGTLambdas",
+                actions=[
+                    "lambda:InvokeFunction",
+                ],
+                effect=Effect.ALLOW,
+                resources=[
+                    self.pre_lambda.function_arn,
+                    self.post_lambda.function_arn,
+                ],
             ),
         ]
