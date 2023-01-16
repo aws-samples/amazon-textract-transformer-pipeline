@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import boto3  # AWS SDK for Python
 
 logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 s3 = boto3.client("s3")
 
 
