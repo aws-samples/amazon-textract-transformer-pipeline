@@ -5,128 +5,110 @@
 # Python Built-Ins:
 import json
 import logging
-import re
-from urllib.parse import urlparse
+from typing import List, Optional
 
 # External Dependencies:
 import boto3  # AWS SDK for Python
 
+# Set up logger before local imports:
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Local Dependencies:
+from data_model import SMGTWorkerAnnotation  # Custom task data model (edit if needed!)
+from smgt import (  # Generic SageMaker Ground Truth parsers/utilities
+    ConsolidationRequest,
+    ObjectAnnotationResult,
+    PostConsolidationDatum,
+)
+
+
 s3 = boto3.client("s3")
 
 
-def handler(event, context):
-    consolidated_labels = []
+def consolidate_object_annotations(
+    object_data: ObjectAnnotationResult,
+    label_attribute_name: str,
+    label_categories: Optional[List[str]] = None,
+) -> PostConsolidationDatum:
+    """Consolidate the (potentially multiple) raw worker annotations for a dataset object
 
-    parsed_url = urlparse(event["payload"]["s3Uri"])
-    logger.info("Consolidating labels from %s", event["payload"]["s3Uri"])
-    textFile = s3.get_object(Bucket=parsed_url.netloc, Key=parsed_url.path[1:])
-    filecont = textFile["Body"].read()
-    annotations = json.loads(filecont)
+    TODO: Actual consolidation/reconciliation of multiple labels is not yet supported!
 
-    for dataset in annotations:
-        dataset_worker_anns = []
-        consolidated_label = {
-            "workerAnnotations": dataset_worker_anns,
-        }
-        dataset_warnings = []
+    This function just takes the "first" (not necessarily clock-first) worker's result and outputs
+    a warning if others were found.
 
-        label = {
-            "datasetObjectId": dataset["datasetObjectId"],
-            "consolidatedAnnotation": {
-                "content": {
-                    event["labelAttributeName"]: consolidated_label,
-                },
-            },
-        }
+    Parameters
+    ----------
+    object_data :
+        Object describing the raw annotations and metadata for a particular task in the SMGT job
+    label_attribute_name :
+        Target attribute on the output object to store consolidated label results (note this may
+        not be the *only* attribute set/updated on the output object, hence provided as a param
+        rather than abstracted away).
+    label_categories :
+        Label categories specified when creating the labelling job. If provided, this is used to
+        translate from class names to numeric class_id similarly to SMGT's built-in bounding box
+        task result.
+    """
+    warn_msgs: List[str] = []
+    worker_anns: List[SMGTWorkerAnnotation] = []
+    for worker_ann in object_data.annotations:
+        ann_raw = worker_ann.fetch_data()
+        worker_anns.append(SMGTWorkerAnnotation.parse(ann_raw, class_list=label_categories))
 
-        for annotation in dataset["annotations"]:
-            ann_raw = json.loads(annotation["annotationData"]["content"])
-            ann_data = json.loads(annotation["annotationData"]["content"])  # (Deep clone of raw)
-            ann_data["workerId"] = annotation["workerId"]
-            # Find the unique OCR annotation IDs:
-            ann_ocr_ids = set(
-                map(
-                    lambda m: m.group(1),
-                    filter(
-                        lambda m: m,
-                        map(
-                            lambda key: re.match(r"ocr-(.*)-[a-z]+", key, flags=re.IGNORECASE),
-                            ann_raw.keys(),
-                        ),
-                    ),
-                ),
+    if len(worker_anns) > 1:
+        warn_msg = (
+            "Reconciliation of multiple worker annotations is not currently implemented for this "
+            "post-processor. Outputting annotation from worker %s and ignoring labels from %s"
+            % (
+                object_data.annotations[0].worker_id,
+                [a.worker_id for a in object_data.annotations[1:]],
             )
-            # Normalize the OCR labels for this annotation:
-            ocr_ann_data = []
-            ann_data["ocrAnnotations"] = ocr_ann_data
-            for ocr_id in ann_ocr_ids:
-                meta_field_key = f"ocr-{ocr_id}-meta"
-                if meta_field_key in ann_data:
-                    ocr_datum = json.loads(ann_data[meta_field_key])
-                    del ann_data[meta_field_key]
-                else:
-                    ocr_datum = {}
-                ocr_datum["annotationId"] = ocr_id
+        )
+        logger.warning(warn_msg)
+        warn_msgs.append(warn_msg)
 
-                # Consolidate the field's status from (potentially missing/inconsistent) radios:
-                ocr_statuses = ("correct", "unclear", "wrong")
-                ocr_status_fields = [f"ocr-{ocr_id}-{s}" for s in ocr_statuses]
-                unknown_statuses = [
-                    s for ix, s in enumerate(ocr_statuses) if ocr_status_fields[ix] not in ann_data
-                ]
-                selected_statuses = [
-                    s
-                    for ix, s in enumerate(ocr_statuses)
-                    if ann_data.get(ocr_status_fields[ix], {}).get("on")
-                ]
-                if len(selected_statuses) >= 1:
-                    ocr_datum["status"] = selected_statuses[0]
-                else:
-                    dataset_warnings.append(
-                        f"Missing correct/unclear/wrong status for OCR field {ocr_id}",
-                    )
-                if len(selected_statuses) > 1:
-                    dataset_warnings.append(
-                        "OCR field {} tagged to multiple statuses {}: Taking first value".format(
-                            ocr_id,
-                            selected_statuses,
-                        )
-                    )
-                if len(unknown_statuses):
-                    dataset_warnings.append(
-                        "".join(
-                            "Could not determine whether the following statuses were selected ",
-                            "for OCR field {}: {}",
-                        ).format(
-                            ocr_id,
-                            unknown_statuses,
-                        )
-                    )
-                for key in ocr_status_fields:
-                    if key in ann_data:
-                        del ann_data[key]
+    consolidated_label = worker_anns[0].to_jsonable()
+    if len(warn_msgs):
+        consolidated_label["consolidationWarnings"] = warn_msgs
 
-                # Load in the correction text, if provided:
-                correction_field_key = f"ocr-{ocr_id}-override"
-                if correction_field_key in ann_data:
-                    # Ignore correction if 'wrong' was not selected:
-                    if "wrong" in selected_statuses:
-                        ocr_datum["correction"] = ann_data[correction_field_key]
-                    # Tidy up the raw field regardless:
-                    del ann_data[correction_field_key]
+    return PostConsolidationDatum(
+        dataset_object_id=object_data.dataset_object_id,
+        consolidated_content={
+            label_attribute_name: consolidated_label,
+            # Note: In our tests it's not possible to add a f"{label_attribute_name}-meta" field
+            # here - it gets replaced by whatever post-processing happens, instead of merged.
+        },
+    )
 
-                ocr_ann_data.append(ocr_datum)
-            dataset_worker_anns.append(ann_data)
 
-        if len(dataset_warnings):
-            consolidated_label["consolidationWarnings"] = dataset_warnings
-        if len(dataset_worker_anns):
-            # Take first annotation as 'consolidated' value:
-            for key in dataset_worker_anns[0]:
-                if key not in consolidated_label:
-                    consolidated_label[key] = dataset_worker_anns[0][key]
-        consolidated_labels.append(label)
+def handler(event: dict, context) -> List[dict]:
+    """Main Lambda handler for consolidation of SMGT worker annotations
 
-    return consolidated_labels
+    This function receives a batched request to consolidate (multiple?) workers' annotations for
+    multiple objects, and outputs the consolidated results per object. For more docs see:
+
+    https://docs.aws.amazon.com/sagemaker/latest/dg/sms-custom-templates-step3-lambda-requirements.html
+    """
+    logger.info("Received event: %s", json.dumps(event))
+    req = ConsolidationRequest.parse(event)
+    if req.label_categories and len(req.label_categories) > 0:
+        label_cats = req.label_categories
+    else:
+        logger.warning(
+            "Label categories list (see CreateLabelingJob.LabelCategoryConfigS3Uri) was not "
+            "provided when creating this job. Post-consolidation outputs will be incompatible with "
+            "built-in Bounding Box task, because we're unable to map class names to numeric IDs."
+        )
+        label_cats = None
+
+    # Loop through the objects in this batch, consolidating annotations for each:
+    return [
+        consolidate_object_annotations(
+            object_data,
+            label_attribute_name=req.label_attribute_name,
+            label_categories=label_cats,
+        ).to_jsonable()
+        for object_data in req.fetch_object_annotations()
+    ]

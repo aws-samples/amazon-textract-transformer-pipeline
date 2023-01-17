@@ -25,6 +25,7 @@
 ></script>
 
 <crowd-form>
+    <!-- Need to update post-processing Lambda if change this 'boxtool' name (or other names) -->
     <crowd-bounding-box
         id="annotator"
         name="boxtool"
@@ -313,7 +314,7 @@
     }
 
     function consolidateBboxAnnotations(annotations) {
-        var groups = []; // { label, boxes }
+        var groups = []; // { label, boxes, boxIxs }
         annotations.forEach(function (box, ixBox) {
             var className = box.label;
             var matchedGroup = null;
@@ -329,10 +330,12 @@
                         matchedGroup = group;
                         // TODO: Might be nice to check if any boxes are completely contained->redundant
                         matchedGroup.boxes.push(box);
+                        matchedGroup.boxIxs.push(ixBox);
                         newGroups.push(matchedGroup);
                     } else {
                         // This box merges `group` into `matchedGroup`
                         matchedGroup.boxes = matchedGroup.boxes.concat(group.boxes);
+                        matchedGroup.boxIxs = matchedGroup.boxIxs.concat(group.boxIxs);
                     }
                 } else {
                     // This group does not overlap with this annotation or is different class - pass through
@@ -344,6 +347,7 @@
                 newGroups.push({
                     label: className,
                     boxes: [box],
+                    boxIxs: [ixBox],
                 });
             }
             groups = newGroups;
@@ -448,6 +452,7 @@
                     label: annGroup.label,
                     labelId: annGroup.labelId,
                     boxes: annGroup.boxes,
+                    boxIxs: annGroup.boxIxs,
                     words: annGroup.words,
                     ocrText: annGroup.ocrText,
                 });
@@ -458,8 +463,7 @@
                     label=annGroup.label,
                     labelId=annGroup.labelId,
                     labelColor=labelColors[annGroup.label],
-                    boxes=annGroup.boxes,
-                    wordIds=annGroup.words.map(function(w) { return w.id; }),
+                    boxIxs=annGroup.boxIxs,
                 );
                 document.getElementById("ocr-fields").appendChild(ocrFieldEl);
             } else {
@@ -490,14 +494,15 @@
                         radio.removeAttribute("checked");
                     });
                     ocrField.ocrText = annGroup.ocrText;
-                    metaField.wordIds = annGroup.words.map(function(w) { return w.id; });
+                    metaField.ocrText = annGroup.ocrText;
                     metaChanged = true;
                 }
-                if (JSON.stringify(ocrField.boxes) !== JSON.stringify(annGroup.boxes)) {
-                    metaField.boxes = annGroup.boxes;
+                if (JSON.stringify(ocrField.boxIxs) !== JSON.stringify(annGroup.boxIxs)) {
+                    metaField.boxIxs = annGroup.boxIxs;
                     metaChanged = true;
                 }
                 ocrField.boxes = annGroup.boxes;
+                ocrField.boxIxs = annGroup.boxIxs;
                 ocrField.words = annGroup.words;
                 if (labelColors[annGroup.label]) {
                     container.style.borderColor = labelColors[annGroup.label];
@@ -527,7 +532,7 @@
         window.ocrFields = newOcrFields;
     }
 
-    function renderOcrField(id, ocrText="", label=null, labelId=null, labelColor=null, boxes=[], wordIds=[]) {
+    function renderOcrField(id, ocrText="", label=null, labelId=null, labelColor=null, boxIxs=[]) {
         var container = document.createElement("div");
         container.id = "ocr-field-" + id;
         container.classList.add("field-container");
@@ -541,8 +546,8 @@
             JSON.stringify({
                 label: label,
                 labelId: labelId,
-                boxes: boxes,
-                wordIds: wordIds,
+                boxIxs: boxIxs,
+                ocrText: ocrText,
             }),
         );
         metastore.style.display = "none";
