@@ -180,6 +180,30 @@ def duplicate_batch_record(
     }
 
 
+def remove_batch_records(
+    batch: Dict[str, List[Any]],
+    ix_start: int,
+    n: int = 1,
+) -> Dict[str, List[Any]]:
+    """Remove one or more records from a batch
+
+    Parameters
+    ----------
+    batch :
+        Input data, dictionary by feature name of value lists.
+    ix_start :
+        0-based index of first record to remove
+    n :
+        Number of records to remove
+
+    Returns
+    -------
+    result :
+        A shallow copy of the batch with the target record(s) removed.
+    """
+    return {name: (values[:ix_start] + values[ix_start + n :]) for name, values in batch.items()}
+
+
 def split_batch_record(
     batch: Dict[str, List[Any]],
     ix: int,

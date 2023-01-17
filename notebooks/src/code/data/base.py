@@ -106,6 +106,25 @@ def normalize_asset_ref(
     return asset_ref
 
 
+def looks_like_hf_dataset(folder: str) -> bool:
+    """Check if a local folder looks like a HuggingFace `Dataset` from save_to_disk(), or not"""
+    if not os.path.isfile(os.path.join(folder, "dataset_info.json")):
+        logger.debug(
+            "Folder missing dataset_info.json does not appear to be HF Dataset: %s",
+            folder,
+        )
+        return False
+    elif not os.path.isfile(os.path.join(folder, "state.json")):
+        logger.debug(
+            "Folder missing state.json does not appear to be HF Dataset: %s",
+            folder,
+        )
+        return False
+    else:
+        logger.debug("Folder appears to be saved Hugging Face Dataset: %s", folder)
+        return True
+
+
 def find_images_from_textract_path(
     textract_file_path: str,
     images_path: str,
@@ -201,6 +220,7 @@ def map_load_text_and_images(
     images_prefix: str = "",
     textract_path: str = "",
     textract_prefix: str = "",
+    # TODO: output_line_ids seems to be broken atm? At least for NER/seq2seq it's throwing errors
     output_line_ids: bool = False,
 ) -> Dict[str, List]:
     """datasets.map function to load examples for a manifest-file-like batch
