@@ -204,6 +204,21 @@ class SMGTOCREntity(BaseJsonable, BaseObjectParser):
             target_text=target_text,
         )
 
+    def to_jsonable(self) -> dict:
+        return {
+            k: v
+            for k, v in {
+                "detectionId": self.detection_id,
+                "ocrStatus": self.ocr_status,
+                "boxIxs": self.box_ixs,
+                "classId": self.class_id,
+                "label": self.label,
+                "rawText": self.raw_text,
+                "targetText": self.target_text,
+            }.items()
+            if v is not None
+        }
+
 
 @dataclass
 class SMGTWorkerAnnotation(BaseJsonable, BaseObjectParser):
