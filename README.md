@@ -202,7 +202,7 @@ The approach should work well for many different document types, and the solutio
 
 However, there are many more opportunities to extend the approach. For example:
 
-- Rather than token/word classification, alternative '**sequence-to-sequence**' ML tasks such as could be applied: Perhaps to fix common OCR error patterns, or to build general question-answering models on documents.
+- Rather than token/word classification, alternative '**sequence-to-sequence**' ML tasks could be applied: Perhaps to fix common OCR error patterns, or to build general question-answering models on documents. Training seq2seq models is discussed further in the [Optional Extras notebook](notebooks/Optional%20Extras.ipynb).
 - Just as the BERT-based model was extended to consider coordinates as input, perhaps **source OCR confidence scores** (also available from Textract) would be useful model inputs.
 - The post-processing Lambda function could be extended to perform more complex validations on detected fields: For example to extract numerics, enforce regular expression matching, or even call some additional AI service such as Amazon Comprehend.
 

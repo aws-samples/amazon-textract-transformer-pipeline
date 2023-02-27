@@ -90,6 +90,8 @@ Consider editing the `select_examples()` function to customize how the set of ca
 
 ### Step 8: Proceed with data annotation and subsequent steps
 
+If you're planning to review OCR accuracy as part of your PoC or train models to normalize from the raw detected text to standardised values (for example, normalising dates or number representations), you might find it useful to use the custom Ground Truth UI presented in Notebook 1 - instead of the default built-in (bounding-box only) UI.
+
 From the labelling job onwards (through notebook 2 and beyond), the flow should be essentially the same as with the sample data. Just remember to edit the `include_jobs` list in notebook 2 to reflect the actual annotation jobs you performed.
 
 If your dataset is particularly tiny (more like e.g. 30 labelled pages than 100), it might be helpful to try increasing the `early_stopping_patience` hyperparameter to force the training job to re-process the same examples for longer. You could also explore hyperparameter tuning. However, it'd likely have a bigger impact to spend that time annotatting more data instead!

@@ -27,19 +27,21 @@ from functools import reduce
 import json
 import logging
 import os
-from typing import List
 
 # External Dependencies:
 import boto3  # General-purpose AWS SDK for Python
 import trp  # Amazon Textract Response Parser
 
-# Local Dependencies
-from util.boxes import UniversalBox
-from util.config import FieldConfiguration
-
-
+# Set up logging before local imports:
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+# Local Dependencies
+from util.config import FieldConfiguration
+from util.extract import extract_entities
+from util.normalize import normalize_detections
+
+
 s3 = boto3.resource("s3")
 ssm = boto3.client("ssm")
 
@@ -74,7 +76,10 @@ def handler(event, context):
     doc = json.loads(s3.Bucket(srcbucket).Object(srckey).get()["Body"].read())
     doc = trp.Document(doc)
 
+    # Pull out the entities from the Amazon Textract-format doc:
     entities = extract_entities(doc, entity_config)
+    # Normalize entity values, if any per-type normalizations are configured:
+    normalize_detections(entities, entity_config)
 
     result_fields = {}
     for ixtype, cfg in enumerate(cfg for cfg in entity_config if not cfg.ignore):
@@ -173,91 +178,3 @@ def handler(event, context):
         ),
         "Fields": result_fields,
     }
-
-
-class EntityDetection:
-    def __init__(self, trp_words, cls_id: int, cls_name: str, page_num: int):
-        self.cls_id = cls_id
-        self.cls_name = cls_name
-        self.page_num = page_num
-
-        if len(trp_words) and not hasattr(trp_words[0], "id"):
-            trp_words_by_line = trp_words
-            trp_words_flat = [w for ws in trp_words for w in ws]
-
-        else:
-            trp_words_by_line = [trp_words]
-            trp_words_flat = trp_words
-        self.bbox = UniversalBox.aggregate(
-            boxes=[UniversalBox(box=w.geometry.boundingBox) for w in trp_words_flat],
-        )
-        self.blocks = list(map(lambda w: w.id, trp_words_flat))
-        self.confidence = min(
-            map(
-                lambda w: min(
-                    w._block.get("PredictedClassConfidence", 1.0),
-                    w.confidence,
-                ),
-                trp_words_flat,
-            )
-        )
-        self.text = "\n".join(
-            map(
-                lambda words: " ".join([w.text for w in words]),
-                trp_words_by_line,
-            )
-        )
-
-    def to_dict(self):
-        return {
-            "ClassId": self.cls_id,
-            "ClassName": self.cls_name,
-            "Confidence": self.confidence,
-            "Blocks": self.blocks,
-            "BoundingBox": self.bbox.to_dict(),
-            "PageNum": self.page_num,
-            "Text": self.text,
-        }
-
-    def __repr__(self):
-        return json.dumps(self.to_dict())
-
-
-def extract_entities(
-    doc: trp.Document,
-    entity_config: List[FieldConfiguration],
-) -> List[EntityDetection]:
-    entity_classes = {c.class_id: c.name for c in entity_config if not c.ignore}
-    detections = []
-
-    current_cls = None
-    current_entity = []
-    for ixpage, page in enumerate(doc.pages):
-        for line in page.lines:  # TODO: Lines InReadingOrder?
-            current_entity.append([])
-            for word in line.words:
-                pred_cls = word._block.get("PredictedClass")
-                if pred_cls not in entity_classes:
-                    pred_cls = None  # Treat all non-config'd entities as "other"
-
-                if pred_cls != current_cls:
-                    if current_cls is not None:
-                        detections.append(
-                            EntityDetection(
-                                trp_words=list(
-                                    filter(
-                                        lambda ws: len(ws),
-                                        current_entity,
-                                    )
-                                ),
-                                cls_id=current_cls,
-                                cls_name=entity_classes[current_cls],
-                                page_num=ixpage + 1,
-                            )
-                        )
-                    current_cls = pred_cls
-                    current_entity = [[]] if pred_cls is None else [[word]]
-                elif pred_cls is not None:
-                    current_entity[-1].append(word)
-
-    return detections

@@ -29,7 +29,7 @@ from .base import (
     split_long_dataset_samples,
     TaskData,
 )
-from .geometry import BoundingBoxAnnotationResult
+from .smgt import BoundingBoxAnnotationResult
 
 
 logger = getLogger("data.ner")
@@ -159,11 +159,13 @@ def map_smgt_boxes_to_word_labels(
     n_classes: int,
 ):
     """datasets.map function to tag "word_labels" from word "boxes" and SMGT bbox annotation data"""
+    # TODO: Check if manifest-line diagnostic feed-through is actually working? Seems broken
     manifest_lines = batch.get("manifest-line")
     if annotation_attr not in batch:
         raise ValueError(
-            "Bounding box label attribute '%s' missing from batch%s"
-            % (annotation_attr, f" (batch from manifest line {manifest_lines[0]}")
+            "Bounding box label attribute '{}' missing from batch{}".format(
+                annotation_attr, " (Manifest lines {manifest_lines})." if manifest_lines else "."
+            )
         )
     # TODO: More useful error messages if one fails?
     annotations = [BoundingBoxAnnotationResult(ann) for ann in batch[annotation_attr]]

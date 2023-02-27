@@ -16,6 +16,7 @@ from ..config import DataTrainingArguments
 from .base import TaskData
 from .mlm import get_task as get_mlm_task
 from .ner import get_task as get_ner_task
+from .seq2seq import get_task as get_seq2seq_task
 
 
 def get_datasets(
@@ -40,5 +41,11 @@ def get_datasets(
         return get_ner_task(
             data_args, tokenizer, processor, n_workers=n_workers, cache_dir=cache_dir
         )
+    elif data_args.task_name == "seq2seq":
+        return get_seq2seq_task(
+            data_args, tokenizer, processor, n_workers=n_workers, cache_dir=cache_dir
+        )
     else:
-        raise ValueError("Unknown task '%s' is not 'mlm' or 'ner'" % data_args.task_name)
+        raise ValueError(
+            "Unknown task '%s' is not in 'mlm', 'ner', 'seq2seq'" % data_args.task_name
+        )

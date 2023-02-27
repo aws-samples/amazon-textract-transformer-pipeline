@@ -296,35 +296,49 @@ def create_bbox_labeling_job(
     local_inputs_folder: str = os.path.join("data", "manifests"),
     reviewing_attribute_name: Optional[str] = None,
     s3_inputs_prefix: str = "data/manifests",
+    task_template: Optional[str] = None,
+    pre_lambda_arn: Optional[str] = None,
+    post_lambda_arn: Optional[str] = None,
 ) -> dict:
     """Create a SageMaker Ground Truth labelling job with the built-in Bounding Box task UI
 
     Parameters
     ----------
-    job_name : str
+    job_name :
         Name of the job to create (must be unique in your AWS Account+Region)
-    bucket_name : str
+    bucket_name :
         Name of the S3 bucket where input/output manifests and job metadata will be stored
-    execution_role_arn : str
+    execution_role_arn :
         ARN of the SageMaker Execution Role (in AWS IAM) that the labelling job will run as. The
         role must have permission to access your selected `bucket_name`.
     fields : Iterable[FieldConfiguration]
         Field/entity types list
-    input_manifest_s3uri : str
+    input_manifest_s3uri :
         's3://...' URI where the input JSON-Lines manifest file is (already) stored
-    output_s3uri : str
+    output_s3uri :
         's3://...' URI where the job output should be stored (SMGT will add a job subfolder)
-    workteam_arn : str
+    workteam_arn :
         ARN of the SageMaker Ground Truth workteam who will be performing the task
-    local_inputs_folder : str
+    local_inputs_folder :
         Local folder where configuration files for SMGT will be stored before uploading to S3.
         (Default 'data/manifests')
     reviewing_attribute_name : Optional[str]
         Set the name of the manifest attribute where existing labels are stored, to trigger an
         adjustment job on pre-existing labels. (Default None)
-    s3_inputs_prefix : str
+    s3_inputs_prefix :
         Key prefix (with or without trailing slash) under which configuration files for SMGT will
         be uploaded to the S3 bucket_name. (Default 'data/manifests')
+    task_template :
+        Optional custom task template file (local path). If not provided, the standard SMGT Bounding
+        Box task UI will be used.
+    pre_lambda_arn :
+        Override AWS Lambda ARN for Ground Truth task pre-processing. When unset, the default
+        pre-processing Lambda for SMGT Bounding Box (adjustment) task UI will be used. Set this
+        parameter to use your own function instead.
+    post_lambda_arn :
+        Override AWS Lambda ARN for Ground Truth task post-processing. When unset, the default
+        post-processing Lambda for SMGT Bounding Box (adjustment) task UI will be used. Set this
+        parameter to use your own function instead.
 
     Returns
     -------
@@ -354,23 +368,26 @@ def create_bbox_labeling_job(
     bucket.upload_file(input_category_file, input_category_s3key)
     print(f"Uploaded Labeling Category Config {input_category_file} to:\n{input_category_s3uri}")
 
-    # Generate and upload the task template;
-    task_template_file = os.path.join(local_inputs_folder, f"{job_name}.liquid.html")
+    # Generate and upload the task template:
     task_template_s3key = "/".join((s3_inputs_prefix, f"{job_name}.liquid.html"))
     task_template_s3uri = f"s3://{bucket_name}/{task_template_s3key}"
-    with open(task_template_file, "w") as f:
-        f.write(
-            get_bbox_template(
-                header="Highlight the entities with bounding boxes",
-                instructions_short=(
-                    label_category_config.get("instructions", {}).get("shortInstruction", "")
-                ),
-                instructions_full=(
-                    label_category_config.get("instructions", {}).get("fullInstruction", "")
-                ),
-                reviewing_attribute_name=reviewing_attribute_name,
+    if task_template is None:
+        task_template_file = os.path.join(local_inputs_folder, f"{job_name}.liquid.html")
+        with open(task_template_file, "w") as f:
+            f.write(
+                get_bbox_template(
+                    header="Highlight the entities with bounding boxes",
+                    instructions_short=(
+                        label_category_config.get("instructions", {}).get("shortInstruction", "")
+                    ),
+                    instructions_full=(
+                        label_category_config.get("instructions", {}).get("fullInstruction", "")
+                    ),
+                    reviewing_attribute_name=reviewing_attribute_name,
+                )
             )
-        )
+    else:
+        task_template_file = task_template
     bucket.upload_file(task_template_file, task_template_s3key)
     print(f"Uploaded resolved task UI template {task_template_file} to:\n{task_template_s3uri}")
 
@@ -403,7 +420,11 @@ def create_bbox_labeling_job(
             "UiConfig": {
                 "UiTemplateS3Uri": task_template_s3uri,
             },
-            "PreHumanTaskLambdaArn": get_smgt_lambda_arn(pre=True, task=task),
+            "PreHumanTaskLambdaArn": (
+                get_smgt_lambda_arn(pre=True, task=task)
+                if pre_lambda_arn is None
+                else pre_lambda_arn
+            ),
             "TaskTitle": "Credit Card Agreement Entities",
             "TaskDescription": "Highlight the entities with bounding boxes",
             "NumberOfHumanWorkersPerDataObject": 1,
@@ -411,7 +432,11 @@ def create_bbox_labeling_job(
             "TaskAvailabilityLifetimeInSeconds": 10 * 24 * 60 * 60,
             "MaxConcurrentTaskCount": 250,
             "AnnotationConsolidationConfig": {
-                "AnnotationConsolidationLambdaArn": get_smgt_lambda_arn(pre=False, task=task),
+                "AnnotationConsolidationLambdaArn": (
+                    get_smgt_lambda_arn(pre=False, task=task)
+                    if post_lambda_arn is None
+                    else post_lambda_arn
+                ),
             },
         },
     )

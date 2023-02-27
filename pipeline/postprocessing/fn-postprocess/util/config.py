@@ -39,6 +39,8 @@ class FieldConfiguration(PascalJsonableDataClass):
         optional: Optional[bool] = None,
         select: Optional[str] = None,
         annotation_guidance: Optional[str] = None,
+        normalizer_endpoint: Optional[str] = None,
+        normalizer_prompt: Optional[str] = None,
     ):
         """Create a FieldConfiguration
 
@@ -61,12 +63,20 @@ class FieldConfiguration(PascalJsonableDataClass):
         annotation_guidance : Optional[str]
             HTML-tagged guidance detailing the specific scope for this entity: I.e. what should
             and should not be included for consistent labelling.
+        normalizer_endpoint : Optional[str]
+            An optional deployed SageMaker seq2seq endpoint for field value normalization, if one
+            should be used (You'll have to train and deploy this endpoint separately).
+        normalizer_prompt : Optional[str]
+            The prompting prefix for the seq2seq field value normalization requests on this field,
+            if enabled. For example, "Convert dates to YYYY-MM-DD: "
         """
         self.class_id = class_id
         self.name = name
         self.ignore = ignore
         self.optional = optional
         self.annotation_guidance = annotation_guidance
+        self.normalizer_endpoint = normalizer_endpoint
+        self.normalizer_prompt = normalizer_prompt
         try:
             self.select = FieldSelectionMethods[select.upper()].value if select else None
         except KeyError as e:
@@ -77,3 +87,9 @@ class FieldConfiguration(PascalJsonableDataClass):
                     [fsm.name for fsm in FieldSelectionMethods],
                 )
             ) from e
+        if bool(self.normalizer_endpoint) ^ bool(self.normalizer_prompt):
+            raise ValueError(
+                "Cannot provide only one of `normalizer_endpoint` and `normalizer_prompt` without "
+                "setting both. Got: '%s' and '%s'"
+                % (self.normalizer_endpoint, self.normalizer_prompt)
+            )

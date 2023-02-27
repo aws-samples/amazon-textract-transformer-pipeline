@@ -7,6 +7,9 @@
 .cdk.staging
 cdk.out
 
+# SageMaker Experiments/Debugger (if try running locally):
+tmp_trainer/
+
 # Working data folders and notebook-built assets:
 # (With some specific exclusions)
 notebooks/data/*

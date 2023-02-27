@@ -1,16 +1,21 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 """Train HuggingFace LayoutLM on Amazon Textract results
+
+(This script also allows for training non-layout-aware models e.g. T5 on seq2seq conditional text
+generation task)
 """
 # Python Built-Ins:
 from inspect import signature
 import os
 import shutil
+from typing import Optional, Tuple
 
 # External Dependencies:
 from torch import distributed as dist
 from transformers import (
     AutoConfig,
+    AutoModelForSeq2SeqLM,
     AutoModelForMaskedLM,
     AutoModelForTokenClassification,
     AutoProcessor,
@@ -19,8 +24,13 @@ from transformers import (
     LayoutLMv2Config,
     LayoutXLMProcessor,
     LayoutXLMTokenizerFast,
+    PretrainedConfig,
+    PreTrainedModel,
+    PreTrainedTokenizerBase,
     PreTrainedTokenizerFast,
+    ProcessorMixin,
     set_seed,
+    Trainer,
 )
 from transformers.file_utils import EntryNotFoundError
 from transformers.trainer_utils import get_last_checkpoint
@@ -35,8 +45,10 @@ from .models.layoutlmv2 import LayoutLMv2ForPretraining
 logger = logging_utils.getLogger("main")
 
 
-def get_model(model_args: config.ModelArguments, data_args: config.DataTrainingArguments):
-    """Load pre-trained Config, Model and Tokenizer"""
+def get_model(
+    model_args: config.ModelArguments, data_args: config.DataTrainingArguments
+) -> Tuple[PretrainedConfig, PreTrainedModel, PreTrainedTokenizerFast, Optional[ProcessorMixin]]:
+    """Load pre-trained Config, Model, Tokenizer, and Processor if one exists"""
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         num_labels=data_args.num_labels,
@@ -75,7 +87,15 @@ def get_model(model_args: config.ModelArguments, data_args: config.DataTrainingA
             revision=model_args.model_revision,
             use_auth_token=True if model_args.use_auth_token else None,
         )
-        tokenizer = processor.tokenizer
+        if hasattr(processor, "tokenizer"):
+            tokenizer = processor.tokenizer
+        elif isinstance(processor, PreTrainedTokenizerBase):
+            # AutoProcessor loaded something, but it's just a standard tokenizer.
+            # This happens e.g. with t5-base model as at HF transformers==4.25.1
+            tokenizer = processor
+            processor = None
+        else:
+            tokenizer = None
     except (EntryNotFoundError, OSError):
         processor = None
         tokenizer = None
@@ -154,6 +174,15 @@ def get_model(model_args: config.ModelArguments, data_args: config.DataTrainingA
                 revision=model_args.model_revision,
                 use_auth_token=True if model_args.use_auth_token else None,
             )
+    elif data_args.task_name == "seq2seq":
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
     else:
         raise ValueError(
             f"Unknown data_args.task_name '{data_args.task_name}' not in ('mlm', 'ner')"
@@ -165,7 +194,7 @@ def train(
     model_args: config.ModelArguments,
     data_args: config.DataTrainingArguments,
     training_args: config.SageMakerTrainingArguments,
-):
+) -> Trainer:
     training_args._setup_devices  # Force distributed setup if applicable and not already done
     logger.info("Started with local_rank %s", training_args.local_rank)
     # Don't strictly need this around the model setup too, but keeps logs more understandable:
@@ -192,8 +221,10 @@ def train(
                 # https://sagemaker.readthedocs.io/en/stable/api/training/smd_data_parallel_use_sm_pysdk.html
                 # For SM Distributed, ddp_launcher.py is not necessary - point straight to train.py
 
-        # Tokenizer check: this script requires a fast tokenizer.
-        if not isinstance(tokenizer, PreTrainedTokenizerFast):
+        # Tokenizer check: Our MLM/NER data prep requires a fast tokenizer.
+        if data_args.task_name in ("mlm", "ner") and not isinstance(
+            tokenizer, PreTrainedTokenizerFast
+        ):
             raise ValueError(
                 "This example script only works for models that have a fast tokenizer. See the list "
                 "at https://huggingface.co/transformers/index.html#supported-frameworks for details."
@@ -239,7 +270,7 @@ def train(
         model=model,
         args=training_args,
         train_dataset=datasets.train_dataset,
-        eval_dataset=datasets.eval_dataset if data_args.validation else None,
+        eval_dataset=datasets.eval_dataset,
         # No `tokenizer`, as either the dataset or the data_collator does it for us
         data_collator=datasets.data_collator,
         callbacks=[
@@ -323,7 +354,7 @@ def train(
     return trainer
 
 
-def main():
+def main() -> None:
     """CLI script entry point to parse arguments and run training"""
     model_args, data_args, training_args = config.parse_args()
 
