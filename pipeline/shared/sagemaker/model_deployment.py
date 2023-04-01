@@ -301,7 +301,7 @@ class ModelTarballAsset(s3assets.Asset):
             asset_hash=asset_hash,
             asset_hash_type=asset_hash_type,
             bundling=BundlingOptions(
-                image=aws_lambda.Runtime.PYTHON_3_8.bundling_image,
+                image=aws_lambda.Runtime.PYTHON_3_9.bundling_image,
                 entrypoint=["bash", "-c"],
                 # TODO: Nesting under code/ is good for PyTorch/HF, but not all frameworks
                 command=["tar --transform 's,^,code/,' -czf /asset-output/model.tar.gz ."],

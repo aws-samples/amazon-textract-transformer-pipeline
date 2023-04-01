@@ -79,7 +79,7 @@ class SageMakerCallerFunction(PythonFunction):
             id,
             *args,
             entry=SM_LAMBDA_PATH,
-            runtime=LambdaRuntime.PYTHON_3_8,
+            runtime=LambdaRuntime.PYTHON_3_9,
             handler="handler",
             index="main.py",
             environment=environment,

@@ -84,7 +84,7 @@ class A2IReviewStep(Construct):
             handler="handler",
             memory_size=128,
             role=lambda_role,
-            runtime=LambdaRuntime.PYTHON_3_8,
+            runtime=LambdaRuntime.PYTHON_3_9,
             timeout=Duration.seconds(10),
         )
         self.callback_lambda = PythonFunction(
@@ -96,7 +96,7 @@ class A2IReviewStep(Construct):
             handler="handler",
             memory_size=128,
             role=lambda_role,
-            runtime=LambdaRuntime.PYTHON_3_8,
+            runtime=LambdaRuntime.PYTHON_3_9,
             timeout=Duration.seconds(60),
         )
         self.a2i_role = Role(

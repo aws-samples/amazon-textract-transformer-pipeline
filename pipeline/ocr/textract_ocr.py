@@ -163,7 +163,7 @@ class TextractOCRStep(Construct):
             handler="handler",
             memory_size=lambda_memory_size,
             role=lambda_role,
-            runtime=LambdaRuntime.PYTHON_3_8,
+            runtime=LambdaRuntime.PYTHON_3_9,
             timeout=lambda_timeout,
         )
         self.sns_topic.add_subscription(subs.LambdaSubscription(self.caller_lambda))

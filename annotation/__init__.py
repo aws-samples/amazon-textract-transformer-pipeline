@@ -201,7 +201,7 @@ class AnnotationInfra(Construct):
             handler="handler",
             memory_size=128,
             role=self.lambda_role,
-            runtime=LambdaRuntime.PYTHON_3_8,
+            runtime=LambdaRuntime.PYTHON_3_9,
             timeout=Duration.seconds(5),
         )
         self._post_lambda = PythonFunction(
@@ -212,7 +212,7 @@ class AnnotationInfra(Construct):
             handler="handler",
             memory_size=128,
             role=self.lambda_role,
-            runtime=LambdaRuntime.PYTHON_3_8,
+            runtime=LambdaRuntime.PYTHON_3_9,
             timeout=Duration.seconds(60),
         )
 

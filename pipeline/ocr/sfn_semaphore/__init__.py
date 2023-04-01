@@ -318,7 +318,7 @@ class SFnSemaphoreLockAcquirer(Construct):
                 index="main.py",
                 handler="handler",
                 memory_size=128,
-                runtime=LambdaRuntime.PYTHON_3_8,
+                runtime=LambdaRuntime.PYTHON_3_9,
                 timeout=Duration.seconds(60),
             )
             # (Read is required as well as write, for the item existence check when using Lambda)

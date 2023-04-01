@@ -340,7 +340,7 @@ class ProcessingPipeline(Construct):
             handler="handler",
             memory_size=128,
             role=self.trigger_lambda_role,
-            runtime=LambdaRuntime.PYTHON_3_8,
+            runtime=LambdaRuntime.PYTHON_3_9,
             timeout=Duration.seconds(15),
         )
         self.trigger_lambda.add_permission(
