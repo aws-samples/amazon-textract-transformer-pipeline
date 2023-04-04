@@ -27,8 +27,9 @@ import type {
 import { addValidateHandler } from "../util/store";
 
 // Need to explicitly set this for PDFJS to find it:
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdn.jsdelivr.net/npm/pdfjs-dist@2.12.313/legacy/build/pdf.worker.js";
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.js`;
+// And likewise we need CMaps to translate fonts for non-native locales (foreign docs):
+const CMAP_URL = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/cmaps/`;
 
 const props = defineProps<{
   /**
@@ -43,8 +44,8 @@ const props = defineProps<{
 const containerRef: Ref<HTMLDivElement | undefined> = ref();
 const viewerRef: Ref<HTMLDivElement | undefined> = ref();
 
-let error = ref(false);
-let pdfEventBus = new pdfjsViewer.EventBus();
+const error = ref(false);
+const pdfEventBus = new pdfjsViewer.EventBus();
 let viewer: pdfjsViewer.PDFViewer;
 let unsubValidate: undefined | (() => void);
 
@@ -115,14 +116,22 @@ onMounted(() => {
       // Type checks won't let us leave linkService out, but also don't like null:
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       linkService: null as any,
-      renderer: "canvas",
       viewer: viewerEl,
       textLayerMode: 0, // No text layer
+    });
+    pdfEventBus.on("pagesinit", function () {
+      // On initialisation, default zoom to page width:
+      console.log("pagesinit Event: Zooming to page-width");
+      viewer.currentScaleValue = "page-width";
     });
 
     // In previous template the URL from Liquid template seemed to get escaped and require e.g.
     // `.replaceAll("&amp;", "&")` - but seems not to be the case now.
-    const loadingTask = pdfjsLib.getDocument(props.src);
+    const loadingTask = pdfjsLib.getDocument({
+      url: props.src,
+      cMapPacked: true,
+      cMapUrl: CMAP_URL, // Enable character mapping (font translation)
+    });
     loadingTask.promise.then(
       (doc) => {
         console.log(`Loaded document with ${doc.numPages} page(s)`);
@@ -231,7 +240,8 @@ custom-page-annotation-layer {
   width: 100%;
   position: absolute;
   overflow: auto;
-  padding: 8px;
+  // PDF.js v3 viewer seems to want to handle horizontal padding within the page divs themselves:
+  padding: 8px 0px;
 }
 
 .pdf-floating-toolbar {
@@ -252,6 +262,13 @@ custom-page-annotation-layer {
       opacity: 0.9;
     }
   }
+}
+
+.pdfViewer {
+  // Since updating to PDF.js v3, without this border the viewer seems not to recognise that it's
+  // visible and therefore to never render.
+  // TODO: Can we find some alternative to get rid of this?
+  border: 1px solid transparent;
 }
 
 .pdfViewer .page {

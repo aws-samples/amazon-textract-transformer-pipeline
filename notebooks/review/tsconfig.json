@@ -4,6 +4,7 @@
   "compilerOptions": {
     "allowJs": true,
     "baseUrl": ".",
+    "ignoreDeprecations": "5.0",  // TODO: https://github.com/vuejs/tsconfig/issues/6
     "paths": {
       "@/*": ["./src/*"]
     }
