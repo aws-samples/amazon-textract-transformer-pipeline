@@ -49,6 +49,7 @@ const rootWidth = ref(1);
 // stretched by some unknown aspect ratio. So instead, we'll use actual pixel sizes which means
 // needing to observe the overall size of this element:
 let resizeObserver: ResizeObserver;
+let warnedMissingCanvas = false; // We'll raise this warning at most once
 
 onMounted(() => {
   const rootEl = root.value;
@@ -64,11 +65,44 @@ onBeforeUnmount(() => {
   }
 });
 
+/**
+ * Set annotation overlay SVG sizing (in response to parent/page resize events)
+ *
+ * Since v3 upgrade, it seems PDF.js PDFViewer sets actual page size via the core
+ * `div.page > div.canvaswrapper > canvas` element instead of on the parent `div.page` to which
+ * this custom component gets inserted. As a consequence the `div.page` may include arbitrary extra
+ * space and we can't rely on just height=100%, width=100% to get this element the same size as the
+ * PDF page.
+ *
+ * The result is the horrible encapsulation-breaking code below, which traverses up from `rootEl`
+ * (the SVG), to `hostEl` (the `<custom...>` element you bound this component to), to `hostEl`'s
+ * parent (assumed to be a PDF.js `div.page`) and from there tries to find the `<canvas>`.
+ *
+ * TODO: A better solution for drawing an SVG overlay that matches the rendered page size+position!
+ */
 function onResize() {
   const rootEl = root.value;
   if (rootEl) {
-    rootHeight.value = rootEl.clientHeight;
-    rootWidth.value = rootEl.clientWidth;
+    const hostEl = (rootEl.getRootNode() as ShadowRoot).host;
+    const pageCanvas = (hostEl.parentElement as HTMLElement).querySelector("canvas");
+    if (pageCanvas) {
+      rootHeight.value = pageCanvas.clientHeight;
+      rootWidth.value = pageCanvas.clientWidth;
+      rootEl.style.height = `${pageCanvas.clientHeight}px`;
+      rootEl.style.width = `${pageCanvas.clientWidth}px`;
+    } else {
+      if (!warnedMissingCanvas) {
+        console.warn(
+          "Couldn't find PDF.js page <canvas> element to annotate - box sizes may be skewed"
+        );
+        // This function is called often, so warn at most once:
+        warnedMissingCanvas = true;
+      }
+      rootHeight.value = rootEl.clientHeight;
+      rootWidth.value = rootEl.clientWidth;
+      rootEl.style.height = "100%";
+      rootEl.style.width = "100%";
+    }
   }
 }
 </script>

@@ -31,7 +31,6 @@ export default defineConfig({
       ],
       // You could point the build to a different input HTML template if needed:
       input: resolve(__dirname, "index.html"),
-      inlineDynamicImports: true, // for vite-plugin-singlefile
       output: {
         format: "iife", // umd should also work
         globals: {
@@ -40,7 +39,7 @@ export default defineConfig({
           "pdfjs-dist/legacy/build/pdf": "pdfjsLib",
           "pdfjs-dist/legacy/web/pdf_viewer": "pdfjsViewer",
         },
-        manualChunks: () => "everything.js", // for vite-plugin-singlefile
+        inlineDynamicImports: true, // for vite-plugin-singlefile
       },
     },
   },
