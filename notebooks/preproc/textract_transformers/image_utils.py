@@ -586,11 +586,11 @@ class Document:
 
         This function works regardless of whether self.file_or_path is an open file object or a path
         """
-        if isinstance(self.file_or_path, str) or hasattr(self.file_or_path, "read"):
-            img = Image.open(self.file_or_path)
+        if isinstance(self._file_or_path, str) or hasattr(self._file_or_path, "read"):
+            img = Image.open(self._file_or_path)
         else:
             # Cannot `with` the buffer, because PIL requires the buffer to still be available later:
-            buffer = io.BytesIO(self.file_or_path)
+            buffer = io.BytesIO(self._file_or_path)
             img = Image.open(buffer)
         self._n_pages = getattr(img, "n_frames", 1)
         return img
