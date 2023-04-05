@@ -4,6 +4,7 @@
 """
 # Python Built-Ins:
 from dataclasses import dataclass
+from enum import Enum
 from logging import getLogger
 import os
 import subprocess
@@ -40,9 +41,24 @@ from aws_cdk.aws_sns import ITopic
 import cdk_ecr_deployment as imagedeploy
 from constructs import Construct
 from sagemaker.image_uris import retrieve as sm_image_retrieve
+from semver import Version
 
 
 logger = getLogger("sagemaker_deployment")
+
+
+class ModelServerType(str, Enum):
+    """Enumeration of known base model server types
+
+    SageMaker inference DLCs for different frameworks/versions may be based on different underlying
+    model server implementations. This enum represents which family of model server is used, for
+    code that tries to set serving configuration variables.
+    """
+
+    MMS = "MMS"  # (AWS Labs Multi-Model Server)
+    TFSERVING = "TFServing"
+    TORCHSERVE = "TorchServe"
+    UNKNOWN = "Unknown"
 
 
 @dataclass
@@ -75,6 +91,55 @@ class SageMakerDLCSpec:
     use_gpu: bool = False
     image_scope: str = "inference"
     base_framework_version: Optional[str] = None
+
+    def model_server_type(self) -> ModelServerType:
+        """Infer from the configuration what kind of model serving stack the image uses
+
+        This information is useful for code that wants to configure throughput/etc management
+        options on the serving stack. The function may return ModelServerType.UNKNOWN. It's also
+        not exhaustively checked - may be incorrect for some older framework versions.
+
+        Raises
+        ------
+        ValueError :
+            If called on a non-inference scoped image (e.g. a training image)
+        """
+        if self.image_scope != "inference":
+            raise ValueError(
+                "Model server type is only applicable to 'inference' images, not '%s'"
+                % (self.image_scope,)
+            )
+        if self.framework == "huggingface":
+            return ModelServerType.MMS
+
+        if self.framework == "pytorch":
+            if self.semver() >= "1.6.0":
+                return ModelServerType.TORCHSERVE
+            else:
+                return ModelServerType.MMS
+        if self.framework == "tensorflow":
+            if self.semver() >= "1.13.0":
+                return ModelServerType.TFSERVING
+            else:
+                return ModelServerType.MMS
+        return ModelServerType.UNKNOWN
+
+    def semver(self) -> Version:
+        """Normalize the `version` field to a semver library semantic Version object
+
+        Raises
+        ------
+        ValueError :
+            If the `version` cannot be parsed as expected
+        """
+        # semver library requires full semantic versions, but SMSDK sometimes works with shorthand
+        # Major.Minor (no .Patch). Check and add a .0 if needed to keep it happy:
+        raw_ver_components = len(self.version.split("."))
+        if raw_ver_components < 3:
+            semver_str = ".".join([self.version] + (["0"] * (3 - raw_ver_components)))
+        else:
+            semver_str = self.version
+        return Version.parse(semver_str)
 
     def to_sm_image_retrieve_args(self, region_name: str) -> dict:
         """Generate keyword arguments for sagemaker.image_uris.retrieve() URI lookup"""
@@ -172,6 +237,7 @@ class SageMakerDLCBasedImage(Construct):
             Tag name to use for your staged Amazon ECR image.
         """
         super().__init__(scope, id, **kwargs)
+        self._base_image_spec = base_image_spec
 
         # Look up the base container URI via SageMaker Python SDK (in whatever region):
         base_image_region = os.environ.get(
@@ -271,6 +337,64 @@ class SageMakerDLCBasedImage(Construct):
             raise subprocess.CalledProcessError(login_result.returncode, login_cmd)
 
         return ecr_host
+
+    def build_inference_config_env(
+        self,
+        max_payload_bytes: Optional[int] = 100 * 1024 * 1024,
+        timeout_secs: Optional[int] = 15 * 60,
+    ) -> Dict[str, str]:
+        """Build environment dictionary to configure the serving stack
+
+        The environment variables defined by this function configure the *in-container* serving
+        stack. They won't help you exceed SageMaker-side limits on payload size or time-out, but
+        may be important for e.g. async endpoints where the SageMaker-side limits are high but the
+        default model server limits are lower.
+
+        Parameters
+        ----------
+        max_payload_bytes :
+            Maximum request/response payload (both set together by this function) size the model
+            should allow, in bytes. Set `None` to omit the environment variable and use the
+            container's default setting (which is usually lower).
+        timeout_secs :
+            Number of seconds the model server should allow for processing before timing out. Set
+            `None` to omit the environment variable and use the container's default setting (which
+            is usually lower).
+
+        Returns
+        -------
+        environment :
+            Str->str dictionary of environment variables to set on the SageMaker Model
+
+        Raises
+        ------
+        ValueError :
+            If this is a non-inference image, or the model server type of the image is unknown
+        NotImplementedError :
+            If the model server type is known, but this function can't configure it yet
+        """
+        server_type = self._base_image_spec.model_server_type()
+        if server_type is ModelServerType.UNKNOWN:
+            raise ValueError(
+                "Can't configure inference because this container's model server type is unknown"
+            )
+
+        if server_type is ModelServerType.MMS:
+            var_prefix = "MMS_"
+        elif server_type is ModelServerType.TORCHSERVE:
+            var_prefix = "TS_"
+        else:
+            raise NotImplementedError(
+                f"Inference server configuration is not yet supported for {server_type.value}"
+            )
+
+        result = {}
+        if timeout_secs is not None:
+            result[f"{var_prefix}DEFAULT_RESPONSE_TIMEOUT"] = str(timeout_secs)
+        if max_payload_bytes is not None:
+            result[f"{var_prefix}MAX_REQUEST_SIZE"] = str(max_payload_bytes)
+            result[f"{var_prefix}MAX_RESPONSE_SIZE"] = str(max_payload_bytes)
+        return result
 
 
 class ModelTarballAsset(s3assets.Asset):
@@ -460,6 +584,7 @@ class SageMakerCustomizedDLCModel(Construct):
         source_dir: Union[str, os.PathLike],
         environment: Optional[Mapping[str, str]] = None,
         max_payload_size: Optional[int] = 104857600,
+        max_response_secs: Optional[int] = 60 * 15,
         model_name: Optional[str] = None,
         tags: Optional[Sequence[Union[CfnTag, Dict[str, Any]]]] = None,
     ):
@@ -489,9 +614,15 @@ class SageMakerCustomizedDLCModel(Construct):
             By default, additional environment variables will be set to enable large request &
             response payload sizes within your container's serving stack. Your model will still be
             subject to SageMaker service payload limits (e.g. ~6MB if deployed to a real-time
-            endpoint). This setting may not work for all frameworks as implemented (e.g. definitely
-            not TensorFlow). Set a different number to adjust the limit, or None to remove these
-            environment variables.
+            endpoint). This setting may not work for all frameworks as currently implemented. Set a
+            different number to adjust the limit, or set both this and `max_response_secs` to `None`
+            to skip this config for unsupported frameworks.
+        max_response_secs :
+            By default, additional environment variables will be set to enable long response times
+            within your container's serving stack. Your model will still be subject to SageMaker
+            service timeout limits. This setting may not work for all frameworks as currently
+            implemented. Set a different number to adjust the limit, or set both this and
+            `max_payload_size` to `None` to skip this config for unsupported frameworks.
         model_name :
             Optional explicit SageMaker Model name to create in the API.
         tags :
@@ -518,11 +649,11 @@ class SageMakerCustomizedDLCModel(Construct):
             "SAGEMAKER_SUBMIT_DIRECTORY": "/opt/ml/model/code",
             **(
                 {}
-                if max_payload_size is None
-                else {
-                    "MMS_MAX_REQUEST_SIZE": str(max_payload_size),
-                    "MMS_MAX_RESPONSE_SIZE": str(max_payload_size),
-                }
+                if max_payload_size is None and max_response_secs is None
+                else image.build_inference_config_env(
+                    max_payload_bytes=max_payload_size,
+                    timeout_secs=max_response_secs,
+                )
             ),
         }
         env_final.update(environment or {})

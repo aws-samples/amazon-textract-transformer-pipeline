@@ -802,6 +802,14 @@ python-versions = "*"
 contextlib2 = ">=0.5.5"
 
 [[package]]
+name = "semver"
+version = "3.0.0"
+description = "Python helper for Semantic Versioning (https://semver.org)"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
 name = "six"
 version = "1.16.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -917,7 +925,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "flake8 (<5)", "pytest-co
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8.0"
-content-hash = "ce29fbd7ddc0d487ae8d54993ee483bdafebfe12841b97d722bd70749899a4f1"
+content-hash = "cc60df4e1d018aa3dea9873abbda3a4c43c11e755dbb7a43a05b6c26f3b31afe"
 
 [metadata.files]
 appnope = []
@@ -984,6 +992,7 @@ pyyaml = []
 s3transfer = []
 sagemaker = []
 schema = []
+semver = []
 six = []
 smdebug-rulesconfig = []
 stack-data = []
