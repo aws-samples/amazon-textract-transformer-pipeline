@@ -1,5 +1,5 @@
 ---
-AWSTemplateFormatVersion: '2010-09-09'
+AWSTemplateFormatVersion: "2010-09-09"
 
 Description: |-
   Quick-start CloudFormation template to deploy the Amazon Textract Transformer Pipeline sample via
@@ -26,7 +26,7 @@ Parameters:
     Description: |-
       Prefix for created SSM parameters, and ID with which users can look up the deployed pipeline
       from notebooks. Alphanumeric with internal hyphens allowed.
-    AllowedPattern: '[a-zA-Z](-?[a-zA-Z0-9])*'
+    AllowedPattern: "[a-zA-Z](-?[a-zA-Z0-9])*"
 
   UseThumbnails:
     Type: String
@@ -42,27 +42,27 @@ Parameters:
 
   BuildSageMakerOCRs:
     Type: String
-    Default: ''
+    Default: ""
     Description: |-
       Comma-separated list of alternative OCR engine names for which SageMaker container images
       should be prepared. Currently only 'tesseract' is supported.
 
   DeploySageMakerOCRs:
     Type: String
-    Default: ''
+    Default: ""
     Description: |-
       Comma-separated list of alternative OCR engine names for which SageMaker endpoints should be
       actually deployed. Any names in here MUST also be included in BuildSageMakerOCRs.
 
   UseSageMakerOCR:
     Type: String
-    Default: ''
+    Default: ""
     Description: |-
       Optionally set ONE open-source OCR engine name to be actually used by the deployed pipeline
       instead of Amazon Textract. This may be useful if you need to read docs in languages not
       currently supported by the Amazon Textract service.
     AllowedValues:
-      - ''
+      - ""
       - tesseract
 
 Metadata:
@@ -82,51 +82,51 @@ Metadata:
 
 Resources:
   CodeBuildServiceRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service: codebuild.amazonaws.com
-            Action: 'sts:AssumeRole'
+            Action: "sts:AssumeRole"
       Policies:
         - PolicyName: StackDeploymentPerms
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Sid: IAMAccess
                 Effect: Allow
                 Action:
-                  - 'iam:AttachRolePolicy'
-                  - 'iam:CreatePolicy'
-                  - 'iam:CreatePolicyVersion'
-                  - 'iam:CreateRole'
-                  - 'iam:DeletePolicy'
-                  - 'iam:DeletePolicyVersion'
-                  - 'iam:DeleteRole'
-                  - 'iam:DeleteRolePolicy'
-                  - 'iam:GetPolicy'
-                  - 'iam:GetPolicyVersion'
-                  - 'iam:GetRole'
-                  - 'iam:GetRolePolicy'
-                  - 'iam:PutRolePolicy'
-                  - 'iam:TagPolicy'
-                  - 'iam:TagRole'
-                  - 'iam:UpdateRole'
-                  - 'iam:UpdateRoleDescription'
-                Resource: '*'
+                  - "iam:AttachRolePolicy"
+                  - "iam:CreatePolicy"
+                  - "iam:CreatePolicyVersion"
+                  - "iam:CreateRole"
+                  - "iam:DeletePolicy"
+                  - "iam:DeletePolicyVersion"
+                  - "iam:DeleteRole"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:GetPolicy"
+                  - "iam:GetPolicyVersion"
+                  - "iam:GetRole"
+                  - "iam:GetRolePolicy"
+                  - "iam:PutRolePolicy"
+                  - "iam:TagPolicy"
+                  - "iam:TagRole"
+                  - "iam:UpdateRole"
+                  - "iam:UpdateRoleDescription"
+                Resource: "*"
       ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/PowerUserAccess'
+        - "arn:aws:iam::aws:policy/PowerUserAccess"
 
   CodeBuildProject:
-    Type: 'AWS::CodeBuild::Project'
+    Type: "AWS::CodeBuild::Project"
     Properties:
       Artifacts:
         Type: NO_ARTIFACTS
       ConcurrentBuildLimit: 1
-      Description: 'CDK stack deployer'
+      Description: "CDK stack deployer"
       Environment:
         ComputeType: BUILD_GENERAL1_MEDIUM
         EnvironmentVariables:
@@ -151,9 +151,9 @@ Resources:
           - Name: USE_SM_OCR
             Type: PLAINTEXT
             Value: !Ref UseSageMakerOCR
-        Image: 'aws/codebuild/standard:5.0'
+        Image: "aws/codebuild/standard:5.0"
         ImagePullCredentialsType: CODEBUILD
-        PrivilegedMode: true  # Need to build container images within the project
+        PrivilegedMode: true # Need to build container images within the project
         Type: LINUX_CONTAINER
       QueuedTimeoutInMinutes: 80
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
@@ -167,7 +167,7 @@ Resources:
             pre_build:
               commands:
                 - set -ex
-                - curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/install-poetry.py | python -
+                - curl -sSL https://install.python-poetry.org/ | python -
                 - export PATH="/root/.local/bin:$PATH"
                 - npm install -g aws-cdk
             build:
@@ -187,33 +187,33 @@ Resources:
   # created or updated:
 
   LambdaExecutionRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service:
                 - lambda.amazonaws.com
             Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
       Policies:
         - PolicyName: RunCodeBuildProject
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Sid: IAMAccess
                 Effect: Allow
                 Action:
-                  - 'codebuild:StartBuild'
+                  - "codebuild:StartBuild"
                 Resource:
                   - !GetAtt CodeBuildProject.Arn
 
   CodeBuildTriggerFunction:
-    Type: 'AWS::Lambda::Function'
+    Type: "AWS::Lambda::Function"
     Properties:
-      Description: 'CloudFormation custom resource implementation for running CodeBuild project'
+      Description: "CloudFormation custom resource implementation for running CodeBuild project"
       Code:
         ZipFile: |
           # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
@@ -296,14 +296,14 @@ Resources:
                   physicalResourceId=event["PhysicalResourceId"],
               )
 
-      Handler: 'index.lambda_handler'
+      Handler: "index.lambda_handler"
       MemorySize: 128
       Role: !GetAtt LambdaExecutionRole.Arn
       Runtime: python3.8
       Timeout: 900
-    
+
   CodeBuildTrigger:
-    Type: 'Custom::CodeBuildTrigger'
+    Type: "Custom::CodeBuildTrigger"
     Properties:
       ServiceToken: !GetAtt CodeBuildTriggerFunction.Arn
       ProjectName: !Ref CodeBuildProject
@@ -317,4 +317,4 @@ Outputs:
     Value: !Ref CodeBuildProject
   CodeBuildConsoleLink:
     Description: Link to project in AWS CodeBuild Console
-    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/codesuite/codebuild/${AWS::AccountId}/projects/${CodeBuildProject}'
+    Value: !Sub "https://${AWS::Region}.console.aws.amazon.com/codesuite/codebuild/${AWS::AccountId}/projects/${CodeBuildProject}"
