@@ -1,0 +1,21 @@
+{
+  "name": "amazon-textract-transformer-pipeline",
+  "version": "0.2.1",
+  "description": "Post-processing Amazon Textract with Transformer-Based Models on Amazon SageMaker",
+  "scripts": {
+    "lint": "black ./cdk"
+  },
+  "keywords": [
+    "Amazon-Textract",
+    "AWS",
+    "Intelligent-Document-Processing",
+    "Machine-Learning",
+    "Transformers"
+  ],
+  "author": "Amazon Web Services",
+  "license": "MIT-0",
+  "private": true,
+  "dependencies": {
+    "aws-cdk": "2.126.0"
+  }
+}
