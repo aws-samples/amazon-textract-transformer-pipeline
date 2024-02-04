@@ -52,8 +52,7 @@ Steps 0-3 below are for locally building and deploying the CDK solution and requ
 > ⚠️ **Note** before using this option:
 > - This bootstrap stack grants broad IAM permissions to the created AWS CodeBuild project role for deploying the sample - so it's **not recommended for use in production environments.**
 > - If using the 'Launch Stack' button above, remember to check it opens the Console in the correct AWS Region you want to deploy in and switch regions if necessary.
-> - Creating (or updating) the bootstrap stack will *start* the process of fetching and deploying the latest sample code, but *not wait for it to finish*. Check the AWS CodeBuild console (link in the bootstrap stack 'Outputs' tab) for build project status and you should see additional separate [CloudFormation stacks](https://console.aws.amazon.com/cloudformation/home?#/stacks) created within a few minutes.
-> - Likewise deleting the bootstrap stack will not delete the sample deployment: You can clean up by deleting the other CloudFormation stacks.
+> - If CDK deployment itself takes longer than 60 minutes for some reason (e.g. customization, alternative configuration), the bootstrap stack will time out and fail. We think this shouldn't happen in normal usage, but if you see it: Remove the `CodeBuildCallback` setting in your own copy of [.infrastructure/attp-bootstrap.cfn.yaml](.infrastructure/attp-bootstrap.cfn.yaml), and please let us know in the GitHub issues!
 
 The bootstrap stack pretty much runs the following steps 0-3 for you in an AWS CodeBuild environment, instead of locally on your computer:
 
@@ -109,7 +108,7 @@ Once the virtual environment is active, install the required dependencies by run
 
 ```sh
 # For Poetry:
-poetry install
+poetry install --no-root
 # ...OR, without Poetry:
 pip install -e .[dev]
 ```
