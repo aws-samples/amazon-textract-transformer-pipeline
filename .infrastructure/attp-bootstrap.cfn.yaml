@@ -144,6 +144,9 @@ Resources:
       Environment:
         ComputeType: BUILD_GENERAL1_MEDIUM
         EnvironmentVariables:
+          - Name: NO_PREBUILT_LAMBDA
+            Type: PLAINTEXT
+            Value: '1'  # https://github.com/cdklabs/cdk-ecr-deployment/issues/651
           - Name: PUBLIC_REPO
             Type: PLAINTEXT
             Value: !Ref CodeRepo
@@ -213,7 +216,7 @@ Resources:
                       data["PhysicalResourceId"] = build_arn
                       log_stream = os.environ.get("CODEBUILD_LOG_PATH")
                       data["Reason"] = "See details in " + (
-                          f"CloudWatch Log Stream {log_stream}" if log_stream else f"AWS CodeBuild {build_arn}"
+                          f"CodeBuild's CloudWatch Log Stream {log_stream}" if log_stream else f"AWS CodeBuild {build_arn}"
                       )
                       response = requests.put(resp_url, data=json.dumps(data))
                       print(f"Notified CloudFormation of {data['Status']}")
