@@ -11,6 +11,7 @@ Description: |-
   permissions to CodeBuild - not recommended for use in production environments.
 
 Parameters:
+  # TODO: Would be nice to support https:// S3 zip URLs here rather than only git repositories
   CodeRepo:
     Type: String
     Default: https://github.com/aws-samples/amazon-textract-transformer-pipeline
@@ -84,6 +85,13 @@ Metadata:
 Resources:
   CodeBuildServiceRole:
     Type: "AWS::IAM::Role"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "Not recommended for use in production environments: Grants CodeBuild broad access to deploy/destroy the CDK solution without scoping down individual required services & resources"
+          - id: W44
+            reason: "Not recommended for use in production environments: Grants CodeBuild broad access to deploy/destroy the CDK solution without scoping down individual required services & resources"
     Properties:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -123,6 +131,11 @@ Resources:
 
   CodeBuildProject:
     Type: "AWS::CodeBuild::Project"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W32
+            reason: "Use default S3 encryption - no actual artifacts being created"
     Properties:
       Artifacts:
         Type: NO_ARTIFACTS
@@ -171,6 +184,7 @@ Resources:
                 - curl -sSL https://install.python-poetry.org/ | python3 -
                 - export PATH="/root/.local/bin:$PATH"
                 - npm install -g aws-cdk
+                # Up-front install to fail early (but we reinst later in case it's overwritten):
                 - pip3 install "requests>=2.27,<3"
             build:
               commands:
@@ -181,6 +195,8 @@ Resources:
                 - poetry run cdk bootstrap
                 - if [ "$CFN_EVENT_TYPE" = "Delete" ]; then poetry run cdk destroy --all --force; else poetry run cdk deploy --all --require-approval never; fi
               finally:
+                # Re-install requests in case it got overwritten:
+                - pip3 install "requests>=2.27,<3"
                 - |
                   cat <<EOS | python3 -
                   import json
@@ -225,12 +241,14 @@ Resources:
                 - lambda.amazonaws.com
             Action:
               - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole' # (CloudWatch Logs)
       Policies:
         - PolicyName: RunCodeBuildProject
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Sid: IAMAccess
+              - Sid: RunCodeBuild
                 Effect: Allow
                 Action:
                   - "codebuild:StartBuild"
@@ -239,6 +257,13 @@ Resources:
 
   CodeBuildTriggerFunction:
     Type: "AWS::Lambda::Function"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89
+            reason: "IAM will authorize access to this rarely-used function: No need to put in VPC"
+          - id: W92
+            reason: "Only to be invoked by CREATE/UPDATE/DELETE CFN events for this stack: no reserved concurrency required"
     Properties:
       Description: "CloudFormation custom resource implementation for running CodeBuild project"
       Code:
@@ -404,7 +429,7 @@ Resources:
       Handler: "index.lambda_handler"
       MemorySize: 128
       Role: !GetAtt LambdaExecutionRole.Arn
-      Runtime: python3.8
+      Runtime: python3.10
       Timeout: 900
 
   ATTPDeployment:
