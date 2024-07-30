@@ -39,7 +39,8 @@ from transformers.trainer_utils import get_last_checkpoint
 from . import config
 from . import data
 from . import logging_utils
-from .smddpfix import Trainer
+# TODO: Our original SageMaker DDP workaround is no longer working
+# from .smddpfix import Trainer
 from .models.layoutlmv2 import LayoutLMv2ForPretraining
 
 logger = logging_utils.getLogger("main")

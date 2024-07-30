@@ -12,11 +12,10 @@ FROM ${BASE_IMAGE}
 # - Pin protobuf < 3.21 due to an error like https://stackoverflow.com/q/72441758 as of 2023-02
 #   (which seems to originate from somewhere in SM DDP package when unconstrained install results
 #   in downloading protobuf@4.x)
-RUN pip install "amazon-textract-response-parser>=0.1,<0.2" "Pillow>=8,<9" \
-    && PT_VER=`pip show torch | grep 'Version:' | sed 's/Version: //'` \
+RUN PT_VER=`pip show torch | grep 'Version:' | sed 's/Version: //'` \
     && pip install git+https://github.com/facebookresearch/detectron2.git setuptools==59.5.0 \
-        torch==$PT_VER "torchvision>=0.11.3,<0.15" "datasets>=2.4,<3" "protobuf<3.21" \
-        "transformers>=4.25,<4.27"
+        "amazon-textract-response-parser>=0.1,<0.2" "datasets[vision]>=2.14,<3" "Pillow>=9.4" \
+        "protobuf<3.21" torch==$PT_VER "torchvision>=0.15,<0.17" "transformers>=4.28,<4.29"
 
 # Could also consider installing detectron2 via pre-built Linux wheel, depending on the PyTorch and
 # CUDA versions of your base container:
@@ -47,7 +46,7 @@ RUN if test -z "$INCLUDE_NOTEBOOK_KERNEL" ; \
     ; else \
         conda install -y -c conda-forge poppler tesseract && \
         PT_VER=`pip show torch | grep 'Version:' | sed 's/Version: //'` && \
-        pip install easyocr ipykernel "ipywidgets>=7,<8" pdf2image pytesseract sagemaker \
+        pip install easyocr ipykernel "ipywidgets>=8.1,<9" pdf2image pytesseract sagemaker \
             torch==$PT_VER && \
         export TESSDATA_PREFIX='/opt/conda/share/tessdata' && \
         python -m ipykernel install --sys-prefix \
