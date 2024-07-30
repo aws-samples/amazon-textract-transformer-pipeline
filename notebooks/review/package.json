@@ -23,7 +23,7 @@
   "dependencies": {
     "amazon-textract-response-parser": "0.4.2",
     "element-internals-polyfill": "1.2.6",
-    "pdfjs-dist": "3.4.120",
+    "pdfjs-dist": "4.5.136",
     "vue": "^3.2.47"
   },
   "devDependencies": {

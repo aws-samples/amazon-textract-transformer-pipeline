@@ -11,8 +11,8 @@
 <script setup lang="ts">
 // legacy/build/pdf.js exports the core `pdfjsLib`, and legacy/web/pdf_viewer.js exports the
 // `pdfjsViewer` namespace - to globals when run from CDN as in our HTML entrypoints.
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf";
-import * as pdfjsViewer from "pdfjs-dist/legacy/web/pdf_viewer";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import * as pdfjsViewer from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
 import type { Ref } from "vue";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 
@@ -112,7 +112,6 @@ onMounted(() => {
     viewer = new pdfjsViewer.PDFViewer({
       container: containerEl,
       eventBus: pdfEventBus,
-      l10n: pdfjsViewer.NullL10n,
       // Type checks won't let us leave linkService out, but also don't like null:
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       linkService: null as any,
@@ -133,7 +132,7 @@ onMounted(() => {
       cMapUrl: CMAP_URL, // Enable character mapping (font translation)
     });
     loadingTask.promise.then(
-      (doc) => {
+      (doc: pdfjsLib.PDFDocumentProxy) => {
         console.log(`Loaded document with ${doc.numPages} page(s)`);
         // Pad out detectionsByPage to make sure it matches document length:
         while (detectionsByPage.length < doc.numPages) {
@@ -142,7 +141,7 @@ onMounted(() => {
 
         viewer.setDocument(doc);
       },
-      (reason) => {
+      (reason: string) => {
         console.error("Document load failed", reason);
         error.value = true;
       }
