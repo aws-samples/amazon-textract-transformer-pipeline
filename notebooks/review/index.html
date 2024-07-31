@@ -26,6 +26,10 @@
       crossorigin="anonymous"
     ></script>
 
+    <!--
+      We consume the IIFE build of TRP.js, so this script tag creates a `window.trp` global which
+      is configured as an external+global in vite.config.js:
+    -->
     <script
       src="https://cdn.jsdelivr.net/npm/amazon-textract-response-parser@0.4.2"
       integrity="sha384-8Ykws8cWb9e4P0qkOQcsZ3qCam0Q0SbKsGqqVUcqliMQgAH1bkSeTxTTEB9PLUPG"
@@ -33,38 +37,38 @@
     ></script>
 
     <!--
-      While many modern browsers support native PDF rendering (see https://pdfobject.com/static/), the
-      iframe within which SMGT/A2I task UIs run is sandboxed; and different browsers take different
-      decisions on whether their built-in PDF rendering plugins should be allowed in these contexts.
+      While many modern browsers support native PDF rendering (see https://pdfobject.com/static/),
+      the iframe within which SMGT/A2I task UIs run is sandboxed; and different browsers vary on
+      whether their built-in PDF rendering plugins should be allowed in these contexts.
 
-      So for broader browser support, we'll use directly use the Mozilla PDF.js libraries which many of
-      these browser implementations are built on anyway:
+      For broader browser support and ability to customize with overlays, we'll use Mozilla's
+      PDF.js library and some components from its reference viewer app. These ES modules will be
+      referenced directly by our app code from CDN (see vite.config.js), but we can add optional
+      optional `modulepreload` references to check their integrity hashes:
     -->
-    <script
-    src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/build/pdf.mjs"
-    integrity="sha384-1yykBolB9bKdWBbrvSNRB1mwxXAmNGxQnuLZgixwVtg6Dd3ilHhzfvaXz4Er+nvM"
-    crossorigin="anonymous"
-    type="module"
-  ></script>
-  <script
-    src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/build/pdf.worker.mjs"
-    integrity="sha384-FO0hoTet8nI05DSRcUGZvMfP8O/Mflt77EhcBTQ9gSClRf07WGYYdCIu2q+pwpHP"
-    crossorigin="anonymous"
-    type="module"
-  ></script>
-  <link
-    rel="stylesheet"
-    href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/web/pdf_viewer.css"
-    integrity="sha384-Sru3/IbHdMtULDIbPPnrVo1qxl0g+HWCiQpeFj+Yibc23sCMlhpm3b3Gas6/OE2M"
-    crossorigin="anonymous">
-  <script
-    src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/web/pdf_viewer.mjs"
-    integrity="sha384-K77FLCqA3txoR/apq+YN91V2B3iQU33oj/cev+GP385Zc6fNmNxVHpm2dKfPTtVq"
-    crossorigin="anonymous"
-    type="module"
-  ></script>
+    <link
+      rel="modulepreload"
+      href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/build/pdf.mjs"
+      integrity="sha384-1yykBolB9bKdWBbrvSNRB1mwxXAmNGxQnuLZgixwVtg6Dd3ilHhzfvaXz4Er+nvM"
+      crossorigin="anonymous">
+    <link
+      rel="modulepreload"
+      href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/build/pdf.worker.mjs"
+      integrity="sha384-FO0hoTet8nI05DSRcUGZvMfP8O/Mflt77EhcBTQ9gSClRf07WGYYdCIu2q+pwpHP"
+      crossorigin="anonymous">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/web/pdf_viewer.css"
+      integrity="sha384-Sru3/IbHdMtULDIbPPnrVo1qxl0g+HWCiQpeFj+Yibc23sCMlhpm3b3Gas6/OE2M"
+      crossorigin="anonymous">
+    <link
+      rel="modulepreload"
+      href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/web/pdf_viewer.mjs"
+      integrity="sha384-K77FLCqA3txoR/apq+YN91V2B3iQU33oj/cev+GP385Zc6fNmNxVHpm2dKfPTtVq"
+      crossorigin="anonymous">
 
     <script>
+      /* Dump parsed A2I task data into a global `window.taskData` variable, for use in main app */
       window.taskData = {
         taskObject: "{{ task.input.TaskObject | grant_read_access }}",
         taskInput: "{{ task.input }}",
@@ -185,5 +189,36 @@
       </full-instructions>
     </crowd-form>
     <script type="module" src="/src/main.ts"></script>
+    <script>
+      /**
+       * Workaround to use scripts of type="module" in SMGT/A2I
+       *
+       * By default, your ESM script tags won't get run because the service relies on explicitly
+       * executing user script tags and "module" isn't included in the expected types list. See:
+       * https://mturk-console-template-preview-hooks.s3.amazonaws.com/previewUITemplateIFrameContent.html
+       *
+       * This small script (not being a module) *will* get run, and will apply a similar pattern to
+       * bump your modules into action.
+       */
+      (function() {
+        var allScripts = document.querySelectorAll("script");
+        if (
+          ![].some.call(
+            allScripts,
+            function(el) { return el.baseURI.includes("mturk-console-template-preview-hooks") }
+          )
+        ) return; // Running outside of SMGT/A2I: Scripts will run fine by themselves
+        // Else need to bump all module scripts:
+        [].forEach.call(allScripts, function(orig) {
+          if (orig.getAttribute("type") !== "module") return;
+          var n = document.createElement("script");
+          n.type = "module";
+          n.crossOrigin = "anonymous";  // Need to allow CORS for CDN-based imports
+          orig.src ? (n.src = orig.src) : n.textContent = orig.innerText;
+          document.head.appendChild(n);
+          orig.parentNode.removeChild(orig);
+        });
+      })();
+    </script>
   </body>
 </html>

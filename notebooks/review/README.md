@@ -224,15 +224,25 @@ There's not much to say on this for A2I: Your task output will be delivered [to 
 
 With **bundling** tools like Vite and Rollup.js, the default behaviour is for any dependency libraries you install to your project (`npm install vue`) and then use in your app (`import {...} from vue`) to be bundled in to your built assets `dist/`. It's also common for these outputs assets to be split across several files (HTML, scripts, stylesheets, etc) which helps page load performance by allowing users' browsers to parallelize executing initial code with fetching other remaining assets.
 
-This is great if you want full control over the hosting of all components needed by your UI, and have somewhere available to host extra assets (such as an [Amazon CloudFront distribution](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html) or [S3 Bucket website](https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteHosting.html)) - but what if you'd rather avoid managing that extra infrastructure?
+This is great if you want full control over the hosting of all components needed by your UI, and have somewhere available to host extra assets (such as an [Amazon CloudFront distribution](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html) or [S3 Bucket website](https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteHosting.html)) - but it means the serving domain for your extra assets would be **different** from your primary template HTML (which is stored and served by the SageMaker service). Most build toolchains will assume relative paths for the different assets by default.
 
 This sample uses the [vite-plugin-singlefile](https://www.npmjs.com/package/vite-plugin-singlefile) plugin to package all generated script and style assets into the main `index.html`, so that nothing needs self-hosting beyond uploading the UI template HTML.
 
-To keep that file reasonably small, we also (manually) externalize dependencies using one of the several free Content Delivery Network (CDN) services that mirror NPM, [jsDelivr](https://www.jsdelivr.com/):
+To keep that file within the service-defined [size limit](https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_UiTemplate.html#sagemaker-Type-UiTemplate-Content) though, we also (manually) externalize dependencies using one of the several free Content Delivery Network (CDN) services that mirror NPM, [jsDelivr](https://www.jsdelivr.com/). The process for doing this will vary depending on which [module format](https://ui.dev/javascript-modules-iifes-commonjs-esmodules) the dependencies are packaged with.
 
-- External `<script>` tags are added to the source HTML to load the resources from CDN, with an integrity hash check to guard against possible tampering (these hashes be generated with a site like https://www.srihash.org/, if you have an URL that's trusted at current point in time).
-- The import targets are declared as `external` in [vite.config.js](vite.config.js) and mapped to whatever global variable is created when loading the library direct in browser (refer to each library's documentation).
-- Externalized dependencies are pinned to exact versions in NPM [package.json](package.json), to avoid any potential hard-to-debug errors caused by a mismatch.
+For **IIFE** libraries like the [Amazon Textract Response Parser for JavaScript](https://www.npmjs.com/package/amazon-textract-response-parser):
+- We can add an external `<script>` tag to the source HTML *before* our main app entrypoint to load the resources from CDN, with an `integrity` hash check to guard against possible tampering. (These hashes be generated with a site like https://www.srihash.org/, if you have an URL that's trusted at current point in time). The asset will set (one or more) global variable(s) when it's executed: In this case `window.trp`.
+- We declare the import target(s) as `external` in [vite.config.js](vite.config.js), and map it to whatever `globals` is appropriate for the particular library.
+
+For **ESM** libraries like [PDF.js](https://mozilla.github.io/pdf.js/),
+- We declare the import target(s) as `external` in [vite.config.js](vite.config.js), and map them to `paths` pointing to our target CDN.
+- Optionally, we can add [modulepreload links](https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/rel/modulepreload) to our HTML to enforce similar SRI hash checking as the IIFE case.
+- In this case our `import` statements in the original source code will be preserved, just set to different (external) paths in the final template: So we need to make sure the main app entrypoint is compiled to a script tag of `type="module"`.
+- At the time of writing, SMGT/A2I requires:
+    1. An additional workaround must force ES module scripts to actually run - See the script fragment in the body of [index.html](index.html)
+    2. Module scripts must be initialized with [`crossorigin="anonymous"`](https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/crossorigin) for cross-domain `import`s to actually be permitted by CORS policy. This is unlikely to be the default configuration for most front-end frameworks that generate script tags, but since we're anyway re-creating the script elements for (1) we don't need to apply a separate fix for (2) in this example.
+
+As can be seen from the code, this kind of case-by-case externalisation of dependencies to CDN brings complexity and duplication: The version of the library installed by NPM (for type checking in local development) must be pinned to exactly match the versions referenced from CDNs in HTML `script` or `modulepreload` tags, and/or the CDN URLs referenced in vite.config.js - to avoid confusing errors.
 
 
 ### "Can vs Should": Gaps between Vue and Web Components

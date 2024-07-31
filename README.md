@@ -158,7 +158,9 @@ Whichever environment type you use, the **execution role** attached to your Note
 
 Once your environment is set up, you can:
 
-- Open JupyterLab (clicking 'Open Studio' for Studio, or 'Open JupyterLab' for a NBI)
+- Open JupyterLab
+  - For SageMaker Studio, click "Open Studio" and then create a [JypyterLab Space](https://docs.aws.amazon.com/sagemaker/latest/dg/studio-updated-jl.html). Check your space has **at least 30GB storage** configured (update the space if needed), and then *run* it.
+  - For a Notebook Instance, click 'Open JupyterLab' for the relevant NBI from the SageMaker console.
 - Open a system terminal window in JupyterLab
 - (If you're on a new SageMaker Notebook Instance, move to the Jupyter root folder with `cd ~/SageMaker`)
 - Clone in this repository with:

@@ -9,8 +9,6 @@
     2. A custom component gives potential for implementing custom annotation tools over documents
   -->
 <script setup lang="ts">
-// legacy/build/pdf.js exports the core `pdfjsLib`, and legacy/web/pdf_viewer.js exports the
-// `pdfjsViewer` namespace - to globals when run from CDN as in our HTML entrypoints.
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import * as pdfjsViewer from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
 import type { Ref } from "vue";
@@ -27,7 +25,7 @@ import type {
 import { addValidateHandler } from "../util/store";
 
 // Need to explicitly set this for PDFJS to find it:
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.mjs`;
 // And likewise we need CMaps to translate fonts for non-native locales (foreign docs):
 const CMAP_URL = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/cmaps/`;
 
