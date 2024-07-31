@@ -33,8 +33,10 @@ export default defineConfig({
       output: {
         format: "es", // Need to use ESM for pdf.js
         paths: {
-          "pdfjs-dist/legacy/build/pdf.mjs": "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/build/pdf.mjs",
-          "pdfjs-dist/legacy/web/pdf_viewer.mjs": "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/web/pdf_viewer.mjs",
+          "pdfjs-dist/legacy/build/pdf.mjs":
+            "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/build/pdf.mjs",
+          "pdfjs-dist/legacy/web/pdf_viewer.mjs":
+            "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/web/pdf_viewer.mjs",
         },
         globals: {
           "amazon-textract-response-parser": "trp",
