@@ -178,17 +178,17 @@ nbformat = ">=4.4.0"
 
 [[package]]
 name = "boto3"
-version = "1.34.122"
+version = "1.34.151"
 description = "The AWS SDK for Python"
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "boto3-1.34.122-py3-none-any.whl", hash = "sha256:b2d7400ff84fa547e53b3d9acfa3c95d65d45b5886ba1ede1f7df4768d1cc0b1"},
-    {file = "boto3-1.34.122.tar.gz", hash = "sha256:56840d8ce91654d182f1c113f0791fa2113c3aa43230c50b4481f235348a6037"},
+    {file = "boto3-1.34.151-py3-none-any.whl", hash = "sha256:35bc76faacf1667d3fbb66c1966acf2230ef26206557efc26d9d9d79337bef43"},
+    {file = "boto3-1.34.151.tar.gz", hash = "sha256:30498a76b6f651ee2af7ae8edc1704379279ab8b91f1a8dd1f4ddf51259b0bc2"},
 ]
 
 [package.dependencies]
-botocore = ">=1.34.122,<1.35.0"
+botocore = ">=1.34.151,<1.35.0"
 jmespath = ">=0.7.1,<2.0.0"
 s3transfer = ">=0.10.0,<0.11.0"
 
@@ -197,13 +197,13 @@ crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.34.122"
+version = "1.34.151"
 description = "Low-level, data-driven core of boto 3."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "botocore-1.34.122-py3-none-any.whl", hash = "sha256:6d75df3af831b62f0c7baa109728d987e0a8d34bfadf0476eb32e2f29a079a36"},
-    {file = "botocore-1.34.122.tar.gz", hash = "sha256:9374e16a36f1062c3e27816e8599b53eba99315dfac71cc84fc3aee3f5d3cbe3"},
+    {file = "botocore-1.34.151-py3-none-any.whl", hash = "sha256:9018680d7d4a8060c26d127ceec5ab5b270879f423ea39b863d8a46f3e34c404"},
+    {file = "botocore-1.34.151.tar.gz", hash = "sha256:0d0968e427a94378f295b49d59170dad539938487ec948de3d030f06092ec6dc"},
 ]
 
 [package.dependencies]
@@ -1396,18 +1396,18 @@ crt = ["botocore[crt] (>=1.33.2,<2.0a.0)"]
 
 [[package]]
 name = "sagemaker"
-version = "2.222.0"
+version = "2.227.0"
 description = "Open source library for training and deploying models on Amazon SageMaker."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "sagemaker-2.222.0-py3-none-any.whl", hash = "sha256:d751d8fd86bbae21649d363f982d1a041a2c662f8ef22d107013d66767c50e03"},
-    {file = "sagemaker-2.222.0.tar.gz", hash = "sha256:617f14174e58ce11333db81aeca78348455700299a602ee7d4fcb0a791be95e0"},
+    {file = "sagemaker-2.227.0-py3-none-any.whl", hash = "sha256:b99ce607a17fb62f2a3092d3fbf53f67eb6def8af546fbcb08f5b65ccb671fe1"},
+    {file = "sagemaker-2.227.0.tar.gz", hash = "sha256:733a9537899c74656f57790479be36d9f76ff9dd58b47f845a922d0d8aaa5c83"},
 ]
 
 [package.dependencies]
 attrs = ">=23.1.0,<24"
-boto3 = ">=1.33.3,<2.0"
+boto3 = ">=1.34.142,<2.0"
 cloudpickle = "2.2.1"
 docker = "*"
 google-pasta = "*"
@@ -1429,12 +1429,12 @@ tqdm = "*"
 urllib3 = ">=1.26.8,<3.0.0"
 
 [package.extras]
-all = ["PyYAML (>=5.4.1,<7)", "accelerate (>=0.24.1,<=0.27.0)", "docker (>=5.0.2,<7.0.0)", "pyspark (==3.3.1)", "sagemaker-feature-store-pyspark-3.3", "sagemaker-schema-inference-artifacts (>=0.0.5)", "scipy (==1.10.1)", "urllib3 (>=1.26.8,<3.0.0)"]
+all = ["PyYAML (>=5.4.1,<7)", "accelerate (>=0.24.1,<=0.27.0)", "docker (>=5.0.2,<8.0.0)", "pyspark (==3.3.1)", "sagemaker-feature-store-pyspark-3.3", "sagemaker-schema-inference-artifacts (>=0.0.5)", "scipy (==1.10.1)", "urllib3 (>=1.26.8,<3.0.0)"]
 feature-processor = ["pyspark (==3.3.1)", "sagemaker-feature-store-pyspark-3.3"]
 huggingface = ["accelerate (>=0.24.1,<=0.27.0)", "sagemaker-schema-inference-artifacts (>=0.0.5)"]
-local = ["PyYAML (>=5.4.1,<7)", "docker (>=5.0.2,<7.0.0)", "urllib3 (>=1.26.8,<3.0.0)"]
+local = ["PyYAML (>=5.4.1,<7)", "docker (>=5.0.2,<8.0.0)", "urllib3 (>=1.26.8,<3.0.0)"]
 scipy = ["scipy (==1.10.1)"]
-test = ["Jinja2 (==3.1.4)", "PyYAML (==6.0)", "PyYAML (>=5.4.1,<7)", "accelerate (>=0.24.1,<=0.27.0)", "apache-airflow (==2.9.1)", "apache-airflow-providers-amazon (==7.2.1)", "attrs (>=23.1.0,<24)", "awslogs (==0.14.0)", "black (==24.3.0)", "cloudpickle (==2.2.1)", "contextlib2 (==21.6.0)", "coverage (>=5.2,<6.2)", "docker (>=5.0.2,<7.0.0)", "fabric (==2.6.0)", "flake8 (==4.0.1)", "mock (==4.0.3)", "nbformat (>=5.9,<6)", "onnx (>=1.15.0)", "pandas (>=1.3.5,<1.5)", "pillow (>=10.0.1,<=11)", "pyspark (==3.3.1)", "pytest (==6.2.5)", "pytest-cov (==3.0.0)", "pytest-rerunfailures (==10.2)", "pytest-timeout (==2.1.0)", "pytest-xdist (==2.4.0)", "pyvis (==0.2.1)", "requests (==2.32.2)", "sagemaker-experiments (==0.1.35)", "sagemaker-feature-store-pyspark-3.3", "sagemaker-schema-inference-artifacts (>=0.0.5)", "schema (==0.7.5)", "scikit-learn (==1.3.0)", "scipy (==1.10.1)", "stopit (==1.1.2)", "tensorflow (>=2.1,<=2.16)", "tox (==3.24.5)", "tritonclient[http] (<2.37.0)", "urllib3 (>=1.26.8,<3.0.0)", "xgboost (>=1.6.2,<=1.7.6)"]
+test = ["Jinja2 (==3.1.4)", "PyYAML (==6.0)", "PyYAML (>=5.4.1,<7)", "accelerate (>=0.24.1,<=0.27.0)", "apache-airflow (==2.9.2)", "apache-airflow-providers-amazon (==7.2.1)", "attrs (>=23.1.0,<24)", "awslogs (==0.14.0)", "black (==24.3.0)", "cloudpickle (==2.2.1)", "contextlib2 (==21.6.0)", "coverage (>=5.2,<6.2)", "docker (>=5.0.2,<8.0.0)", "fabric (==2.6.0)", "flake8 (==4.0.1)", "huggingface-hub (>=0.23.4)", "mlflow (>=2.12.2,<2.13)", "mock (==4.0.3)", "nbformat (>=5.9,<6)", "onnx (>=1.15.0)", "pandas (>=1.3.5,<1.5)", "pillow (>=10.0.1,<=11)", "pyspark (==3.3.1)", "pytest (==6.2.5)", "pytest-cov (==3.0.0)", "pytest-rerunfailures (==10.2)", "pytest-timeout (==2.1.0)", "pytest-xdist (==2.4.0)", "pyvis (==0.2.1)", "requests (==2.32.2)", "sagemaker-experiments (==0.1.35)", "sagemaker-feature-store-pyspark-3.3", "sagemaker-schema-inference-artifacts (>=0.0.5)", "schema (==0.7.5)", "scikit-learn (==1.3.0)", "scipy (==1.10.1)", "stopit (==1.1.2)", "tensorflow (>=2.1,<=2.16)", "tox (==3.24.5)", "tritonclient[http] (<2.37.0)", "urllib3 (>=1.26.8,<3.0.0)", "xgboost (>=1.6.2,<=1.7.6)"]
 
 [[package]]
 name = "schema"
@@ -1666,4 +1666,4 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.9,<3.12"
-content-hash = "3c5fa47a2013946832754ad2132cf77dbc5eb8b4342ddfc755d1433615bc34bf"
+content-hash = "5023b43268226f32807bc1ccf2d1495f35d2d27b78534dcf935ea12cef5e3a11"
