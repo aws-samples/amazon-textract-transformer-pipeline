@@ -34,7 +34,7 @@ export class FieldSingleValue extends FieldSingleValueBaseElement {
   }
   constructor(initialProps?: Record<string, unknown> | undefined) {
     super(initialProps);
-    this._internals = this.attachInternals();
+    this._internals = this.attachInternals() as unknown as ElementInternals;
   }
 }
 
