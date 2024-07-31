@@ -40,7 +40,7 @@ from typing import Optional
 import boto3
 import datasets
 import numpy as np
-import PIL
+from PIL import Image
 
 # Sadly (at transformers v4.6), LayoutLMTokenizer doesn't seem to work with AutoTokenizer as it
 # expects config.json, not tokenizer_config.json:
@@ -250,11 +250,11 @@ def input_fn(input_bytes, content_type: str):
                     )
                 if page_num is None:
                     if thumbnails.dtype.kind == "S":
-                        # Ensure we close() our BytesIOs without breaking PIL.Images:
+                        # Ensure we close() our BytesIOs without breaking PIL Images:
                         thmbs = []
                         for b in thumbnails:
                             with io.BytesIO(b) as imgio:
-                                thmbs.append(PIL.Image.open(imgio).copy())
+                                thmbs.append(Image.open(imgio).copy())
                         thumbnails = thmbs
                     elif thumbnails.ndim != 4:
                         logger.warning(
@@ -263,9 +263,9 @@ def input_fn(input_bytes, content_type: str):
                         )
                 else:
                     if thumbnails.dtype.kind == "S":
-                        # Again closing the BytesIOs without breaking PIL.Image:
+                        # Again closing the BytesIOs without breaking PIL Image:
                         with io.BytesIO(thumbnails[page_num - 1]) as imgio:
-                            thumbnails = [PIL.Image.open(imgio).copy()]
+                            thumbnails = [Image.open(imgio).copy()]
                     elif thumbnails.ndim != 4:
                         logger.warning(
                             "Thumbnails expected either array of PNG bytestrings or 4D images array. "
@@ -428,7 +428,7 @@ def predict_fn(input_data: dict, model: dict):
                 "given. Generating default blank images - accuracy may be degraded."
             )
             logger.warning(warns[-1])
-            images = [PIL.Image.new("RGB", DEFAULT_THUMBNAIL_SIZE, DEFAULT_THUMBNAIL_COLOR)] * len(
+            images = [Image.new("RGB", DEFAULT_THUMBNAIL_SIZE, DEFAULT_THUMBNAIL_COLOR)] * len(
                 words_by_page
             )
 

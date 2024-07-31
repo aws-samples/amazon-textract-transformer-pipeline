@@ -90,7 +90,7 @@ function listValueEls(): Array<MountedMultiFieldValueElement> {
       transcludedEls.push(el);
     } else {
       transcludedEls = transcludedEls.concat(
-        Array.from(el.querySelectorAll("custom-multifield-value"))
+        Array.from(el.querySelectorAll("custom-multifield-value")),
       );
     }
   });
@@ -118,7 +118,7 @@ function onRemoveValueIndex(index: number) {
   console.log(`${props.name} removing value index ${index}`);
   const elsAscendingIndex = listValueEls().sort(
     // Only typed as HTMLElements here, but the concrete components will have 'index' attribute:
-    (a, b) => a.index - b.index
+    (a, b) => a.index - b.index,
   );
   let nRemoved = 0;
   elsAscendingIndex.forEach((el) => {
@@ -185,7 +185,7 @@ function setCanDeleteValues(config?: { enabled?: boolean; els?: Element[] }) {
   }
 
   console.log(
-    `${config.enabled ? "Enabling" : "Disabling"} delete for ${config.els.length} values`
+    `${config.enabled ? "Enabling" : "Disabling"} delete for ${config.els.length} values`,
   );
   // Boolean HTMLElement attributes use ""/remove, not true/false:
   if (config.enabled) {

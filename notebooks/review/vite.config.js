@@ -11,9 +11,6 @@ import { defineConfig } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import vue from "@vitejs/plugin-vue";
 
-// Local Dependencies:
-import { viteNoModule } from "./tools/vite-plugin-nomodule";
-
 // See reference at https://vitejs.dev/config/
 export default defineConfig({
   build: {
@@ -24,20 +21,25 @@ export default defineConfig({
     reportCompressedSize: false, // Not really relevant for single-file outputs
     rollupOptions: {
       external: [
-        // Dependencies to exclude from build because they're included via CDN in template:
+        // ---- Dependencies to exclude from build (will be fetched from CDN):
+        // TRP.js is run as IIFE by a script tag in the HTML which produces a `trp` global (below):
         "amazon-textract-response-parser",
-        "pdfjs-dist/legacy/build/pdf",
-        "pdfjs-dist/legacy/web/pdf_viewer",
+        // PDF.js entrypoints will be treated as external `paths` (below):
+        "pdfjs-dist/legacy/build/pdf.mjs",
+        "pdfjs-dist/legacy/web/pdf_viewer.mjs",
       ],
       // You could point the build to a different input HTML template if needed:
       input: resolve(__dirname, "index.html"),
       output: {
-        format: "iife", // umd should also work
+        format: "es", // Need to use ESM for pdf.js
+        paths: {
+          "pdfjs-dist/legacy/build/pdf.mjs":
+            "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/build/pdf.mjs",
+          "pdfjs-dist/legacy/web/pdf_viewer.mjs":
+            "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.5.136/legacy/web/pdf_viewer.mjs",
+        },
         globals: {
-          // For CDN-externalized modules, what global variables does running the script set:
           "amazon-textract-response-parser": "trp",
-          "pdfjs-dist/legacy/build/pdf": "pdfjsLib",
-          "pdfjs-dist/legacy/web/pdf_viewer": "pdfjsViewer",
         },
         inlineDynamicImports: true, // for vite-plugin-singlefile
       },
@@ -56,8 +58,6 @@ export default defineConfig({
     }),
     // Package all outputs together so we don't have to find a way to host many JS/CSS/etc assets:
     viteSingleFile(),
-    // Sub script tag `type="module"` to `defer` for CORS handling in SMGT/A2I:
-    viteNoModule(),
   ],
   resolve: {
     alias: {

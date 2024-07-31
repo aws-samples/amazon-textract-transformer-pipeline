@@ -51,7 +51,7 @@ export class ObjectValueInputElement extends ObjectValueInputElementBase {
 
   constructor(initialProps?: Record<string, unknown> | undefined) {
     super(initialProps);
-    this._internals = this.attachInternals();
+    this._internals = this.attachInternals() as unknown as ElementInternals;
     // No need to continuously watch() for changes here: Setting once is sufficient
     this.value = store;
   }

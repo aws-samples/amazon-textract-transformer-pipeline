@@ -19,12 +19,12 @@ setuptools.setup(
     packages=["annotation", "pipeline"],
 
     install_requires=[
-        "aws-cdk-lib==^2.46.0",
-        "aws-cdk.aws-lambda-python-alpha==^2.46.0-alpha.0",
-        "boto3==^1.24.0",
-        "cdk-ecr-deployment==^2.5.6",
-        "constructs==^10.0.101",
-        "sagemaker>=2.87,<3",
+        "aws-cdk-lib==^2.126.0",
+        "aws-cdk.aws-lambda-python-alpha==^2.126.0-alpha.0",
+        "boto3==^1.34.33",
+        "cdk-ecr-deployment==^3.0.13",
+        "constructs==^10.3.0",
+        "sagemaker>=2.205,<3",
     ],
     extras_require={
         "dev": [
@@ -33,7 +33,7 @@ setuptools.setup(
         ]
     },
 
-    python_requires=">=3.8.0",
+    python_requires=">=3.9,<3.12",
 
     classifiers=[
         "Development Status :: 4 - Beta",

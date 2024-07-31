@@ -190,13 +190,13 @@ class ProcessingPipeline(Construct):
             directory=abs_path("../notebooks/custom-containers/preproc", __file__),
             file="Dockerfile",
             ecr_repo="sm-ocr-preprocs",
-            ecr_tag="pytorch-1.10-inf-cpu",
+            ecr_tag="pytorch-2.2-inf-cpu",
             base_image_spec=SageMakerDLCSpec(
                 framework="pytorch",
                 use_gpu=False,
                 image_scope="inference",
-                py_version="py38",
-                version="1.10",
+                py_version="py310",
+                version="2.2",
             ),
         )
 

@@ -9,10 +9,8 @@
     2. A custom component gives potential for implementing custom annotation tools over documents
   -->
 <script setup lang="ts">
-// legacy/build/pdf.js exports the core `pdfjsLib`, and legacy/web/pdf_viewer.js exports the
-// `pdfjsViewer` namespace - to globals when run from CDN as in our HTML entrypoints.
-import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf";
-import * as pdfjsViewer from "pdfjs-dist/legacy/web/pdf_viewer";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import * as pdfjsViewer from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
 import type { Ref } from "vue";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 
@@ -27,7 +25,7 @@ import type {
 import { addValidateHandler } from "../util/store";
 
 // Need to explicitly set this for PDFJS to find it:
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.mjs`;
 // And likewise we need CMaps to translate fonts for non-native locales (foreign docs):
 const CMAP_URL = `//cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/cmaps/`;
 
@@ -62,7 +60,7 @@ pdfEventBus.on("pagerendered", (data: { pageNumber: number; source: pdfjsViewer.
   ) {
     console.log(`Adding ${pageDetections.length} bboxes to PDF page ${data.pageNumber}`);
     const annEl = document.createElement(
-      "custom-page-annotation-layer"
+      "custom-page-annotation-layer",
     ) as unknown as AnnotationLayerElement;
     annEl.detections = pageDetections;
     data.source.div.appendChild(annEl);
@@ -83,7 +81,7 @@ onMounted(() => {
       // (This will fail to [] if .Values doesn't exist either)
       fieldDets = Array.prototype.concat.apply(
         [],
-        fieldMultiValues?.map((v) => v.Detections) || []
+        fieldMultiValues?.map((v) => v.Detections) || [],
       );
     }
     fieldDets.forEach((det: Detection) => {
@@ -106,13 +104,12 @@ onMounted(() => {
     if (!(containerEl && viewerEl)) {
       // This should never happen - really just to keep TypeScript happy
       throw new Error(
-        `Container and/or viewer element missing from template: ${containerEl}, ${viewerEl}`
+        `Container and/or viewer element missing from template: ${containerEl}, ${viewerEl}`,
       );
     }
     viewer = new pdfjsViewer.PDFViewer({
       container: containerEl,
       eventBus: pdfEventBus,
-      l10n: pdfjsViewer.NullL10n,
       // Type checks won't let us leave linkService out, but also don't like null:
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       linkService: null as any,
@@ -133,7 +130,7 @@ onMounted(() => {
       cMapUrl: CMAP_URL, // Enable character mapping (font translation)
     });
     loadingTask.promise.then(
-      (doc) => {
+      (doc: pdfjsLib.PDFDocumentProxy) => {
         console.log(`Loaded document with ${doc.numPages} page(s)`);
         // Pad out detectionsByPage to make sure it matches document length:
         while (detectionsByPage.length < doc.numPages) {
@@ -142,10 +139,10 @@ onMounted(() => {
 
         viewer.setDocument(doc);
       },
-      (reason) => {
+      (reason: string) => {
         console.error("Document load failed", reason);
         error.value = true;
-      }
+      },
     );
   } catch (err) {
     console.error("Failed to initialize PDF viewer", err);
