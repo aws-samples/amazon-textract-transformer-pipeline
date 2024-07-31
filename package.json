@@ -3,7 +3,8 @@
   "version": "0.2.1",
   "description": "Post-processing Amazon Textract with Transformer-Based Models on Amazon SageMaker",
   "scripts": {
-    "lint": "black ./cdk"
+    "lint": "black ./cdk",
+    "login:ecrpublic": "aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws"
   },
   "keywords": [
     "Amazon-Textract",
