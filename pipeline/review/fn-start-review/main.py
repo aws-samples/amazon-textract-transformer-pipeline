@@ -95,7 +95,9 @@ def handler(event, context):
         if "FlowDefinitionArn" in event:
             flow_definition_arn = event["FlowDefinitionArn"]
         elif default_flow_definition_arn_param:
-            flow_definition_arn = ssm.get_parameter(Name=default_flow_definition_arn_param,)[
+            flow_definition_arn = ssm.get_parameter(
+                Name=default_flow_definition_arn_param,
+            )[
                 "Parameter"
             ]["Value"]
             if (not flow_definition_arn) or flow_definition_arn.lower() in ("undefined", "null"):

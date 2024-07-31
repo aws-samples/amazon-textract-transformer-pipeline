@@ -21,8 +21,8 @@ constructs = "^10.3.0"
 sagemaker = ">=2.214.3,<3"
 semver = "^3.0.0"
 
-[tool.poetry.dev-dependencies]
-black = "^22.3.0"
+[tool.poetry.group.dev.dependencies]
+black = "^24.3.0"
 black-nb = "^0.7.0"
 
 [build-system]

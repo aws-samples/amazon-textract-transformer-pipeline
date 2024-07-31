@@ -255,12 +255,14 @@ class ProcessingPipeline(Construct):
                 "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[0].Bucket"),
                 "Key": sfn.JsonPath.string_at("$.OCRPreproc[0].Key"),
             },
-            thumbnail_input_jsonpath={
-                "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[1].Bucket"),
-                "Key": sfn.JsonPath.string_at("$.OCRPreproc[1].Key"),
-            }
-            if use_thumbnails
-            else None,
+            thumbnail_input_jsonpath=(
+                {
+                    "Bucket": sfn.JsonPath.string_at("$.OCRPreproc[1].Bucket"),
+                    "Key": sfn.JsonPath.string_at("$.OCRPreproc[1].Key"),
+                }
+                if use_thumbnails
+                else None
+            ),
         )
         self.postprocessing_step = LambdaPostprocStep(
             self,
