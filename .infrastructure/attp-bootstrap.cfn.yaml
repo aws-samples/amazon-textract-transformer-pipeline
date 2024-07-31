@@ -146,7 +146,7 @@ Resources:
         EnvironmentVariables:
           - Name: NO_PREBUILT_LAMBDA
             Type: PLAINTEXT
-            Value: '1'  # https://github.com/cdklabs/cdk-ecr-deployment/issues/651
+            Value: '1'  # TODO: https://github.com/cdklabs/cdk-ecr-deployment/issues/651
           - Name: PUBLIC_REPO
             Type: PLAINTEXT
             Value: !Ref CodeRepo
