@@ -60,7 +60,7 @@ pdfEventBus.on("pagerendered", (data: { pageNumber: number; source: pdfjsViewer.
   ) {
     console.log(`Adding ${pageDetections.length} bboxes to PDF page ${data.pageNumber}`);
     const annEl = document.createElement(
-      "custom-page-annotation-layer"
+      "custom-page-annotation-layer",
     ) as unknown as AnnotationLayerElement;
     annEl.detections = pageDetections;
     data.source.div.appendChild(annEl);
@@ -81,7 +81,7 @@ onMounted(() => {
       // (This will fail to [] if .Values doesn't exist either)
       fieldDets = Array.prototype.concat.apply(
         [],
-        fieldMultiValues?.map((v) => v.Detections) || []
+        fieldMultiValues?.map((v) => v.Detections) || [],
       );
     }
     fieldDets.forEach((det: Detection) => {
@@ -104,7 +104,7 @@ onMounted(() => {
     if (!(containerEl && viewerEl)) {
       // This should never happen - really just to keep TypeScript happy
       throw new Error(
-        `Container and/or viewer element missing from template: ${containerEl}, ${viewerEl}`
+        `Container and/or viewer element missing from template: ${containerEl}, ${viewerEl}`,
       );
     }
     viewer = new pdfjsViewer.PDFViewer({
@@ -142,7 +142,7 @@ onMounted(() => {
       (reason: string) => {
         console.error("Document load failed", reason);
         error.value = true;
-      }
+      },
     );
   } catch (err) {
     console.error("Failed to initialize PDF viewer", err);

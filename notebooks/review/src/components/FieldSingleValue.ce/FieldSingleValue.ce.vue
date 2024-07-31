@@ -111,7 +111,7 @@ onMounted(() => {
         "Failed to attach control shadow root to parent form. You'll need to rely on store",
         "pattern fallback for transmitting results to SageMaker.",
       ].join(" "),
-      (err as Error).stack
+      (err as Error).stack,
     );
   }
 });

@@ -93,7 +93,7 @@ function onResize() {
     } else {
       if (!warnedMissingCanvas) {
         console.warn(
-          "Couldn't find PDF.js page <canvas> element to annotate - box sizes may be skewed"
+          "Couldn't find PDF.js page <canvas> element to annotate - box sizes may be skewed",
         );
         // This function is called often, so warn at most once:
         warnedMissingCanvas = true;

@@ -150,7 +150,7 @@ function emitBubblingEvent<T = unknown>(eventType: string, ...args: T[]): boolea
       // problem for you, could raise it directly on the outer <custom-multifield-value> by
       // instead dispatching it on `(thisEl.getRootNode() as ShadowRoot | undefined)?.host`
       composed: true,
-    })
+    }),
   );
 }
 
@@ -163,7 +163,7 @@ function onClickRemove() {
     REMOVE_EVENT_TYPE,
     // Fix bug observed in FF SMStudio render preview where this was getting passed up as string,
     // preventing the parent from correctly identifying which element to delete:
-    typeof myIndex === "string" ? parseInt(myIndex) : myIndex
+    typeof myIndex === "string" ? parseInt(myIndex) : myIndex,
   );
 }
 
