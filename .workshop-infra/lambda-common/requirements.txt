@@ -1,0 +1,1 @@
+# Nothing else required beyond standard AWS Lambda environment (boto3, etc)
